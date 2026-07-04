@@ -1,0 +1,16 @@
+node_modules
+# Editor / OS
+.deno_lsp/
+.DS_Store
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+/generated/prisma
