@@ -1,14 +1,17 @@
 import { User, UserProps } from '../../../src/domain/models/user';
+import { Email } from '../../../src/domain/models/email';
 
 describe('User', () => {
-  // Valid props reused across tests. We clone with spread when we need to mutate.
-  const validProps: UserProps = {
+  // Factory helper: builds a fresh set of valid props for each test.
+  // Using a function (not a shared const) prevents accidental mutation
+  // leaking between tests.
+  const buildValidProps = (): UserProps => ({
     id: 'user-123',
-    email: 'ana@example.com',
+    email: new Email('ana@example.com'),
     passwordHash: 'hashed_password_value',
     displayName: 'Ana',
     createdAt: new Date('2026-01-15T10:00:00Z'),
-  };
+  });
 
   // ============================================================
   // Creation
@@ -16,14 +19,14 @@ describe('User', () => {
   describe('creation', () => {
     it('should_create_user_when_all_properties_are_valid', () => {
       // Arrange
-      const props = { ...validProps };
+      const props = buildValidProps();
 
       // Act
       const user = new User(props);
 
       // Assert
       expect(user.id).toBe('user-123');
-      expect(user.email).toBe('ana@example.com');
+      expect(user.email.value).toBe('ana@example.com');
       expect(user.passwordHash).toBe('hashed_password_value');
       expect(user.displayName).toBe('Ana');
       expect(user.createdAt).toEqual(new Date('2026-01-15T10:00:00Z'));
@@ -31,7 +34,7 @@ describe('User', () => {
 
     it('should_trim_display_name_when_creating_user', () => {
       // Arrange
-      const props = { ...validProps, displayName: '  Ana  ' };
+      const props = { ...buildValidProps(), displayName: '  Ana  ' };
 
       // Act
       const user = new User(props);
@@ -40,33 +43,20 @@ describe('User', () => {
       expect(user.displayName).toBe('Ana');
     });
 
-    it('should_throw_error_when_email_format_is_invalid', () => {
+    it('should_throw_error_when_email_is_not_an_email_value_object', () => {
       // Arrange
-      const props = { ...validProps, email: 'not-an-email' };
+      const props = {
+        ...buildValidProps(),
+        email: 'ana@example.com' as unknown as Email, // deliberately wrong
+      };
 
       // Act + Assert
-      expect(() => new User(props)).toThrow('Invalid email format');
-    });
-
-    it('should_throw_error_when_email_has_no_domain', () => {
-      // Arrange
-      const props = { ...validProps, email: 'ana@' };
-
-      // Act + Assert
-      expect(() => new User(props)).toThrow('Invalid email format');
-    });
-
-    it('should_throw_error_when_email_has_no_at_sign', () => {
-      // Arrange
-      const props = { ...validProps, email: 'anaexample.com' };
-
-      // Act + Assert
-      expect(() => new User(props)).toThrow('Invalid email format');
+      expect(() => new User(props)).toThrow('Email must be an Email value object');
     });
 
     it('should_throw_error_when_display_name_is_empty_string', () => {
       // Arrange
-      const props = { ...validProps, displayName: '' };
+      const props = { ...buildValidProps(), displayName: '' };
 
       // Act + Assert
       expect(() => new User(props)).toThrow('Display name cannot be empty');
@@ -74,7 +64,7 @@ describe('User', () => {
 
     it('should_throw_error_when_display_name_is_only_whitespace', () => {
       // Arrange
-      const props = { ...validProps, displayName: '   ' };
+      const props = { ...buildValidProps(), displayName: '   ' };
 
       // Act + Assert
       expect(() => new User(props)).toThrow('Display name cannot be empty');
@@ -82,10 +72,41 @@ describe('User', () => {
 
     it('should_throw_error_when_password_hash_is_empty', () => {
       // Arrange
-      const props = { ...validProps, passwordHash: '' };
+      const props = { ...buildValidProps(), passwordHash: '' };
 
       // Act + Assert
       expect(() => new User(props)).toThrow('Password hash cannot be empty');
+    });
+  });
+
+  // ============================================================
+  // Email delegation
+  // ============================================================
+  describe('email delegation', () => {
+    it('should_expose_email_as_email_value_object', () => {
+      // Arrange
+      const props = buildValidProps();
+
+      // Act
+      const user = new User(props);
+
+      // Assert
+      expect(user.email).toBeInstanceOf(Email);
+    });
+
+    it('should_normalize_email_via_email_value_object', () => {
+      // Arrange
+      const props = {
+        ...buildValidProps(),
+        email: new Email('  ANA@Example.COM  '),
+      };
+
+      // Act
+      const user = new User(props);
+
+      // Assert
+      // The Email VO normalizes; User just holds it.
+      expect(user.email.value).toBe('ana@example.com');
     });
   });
 
@@ -95,7 +116,7 @@ describe('User', () => {
   describe('rename', () => {
     it('should_change_display_name_when_new_name_is_valid', () => {
       // Arrange
-      const user = new User(validProps);
+      const user = new User(buildValidProps());
 
       // Act
       user.rename('Ana Maria');
@@ -106,7 +127,7 @@ describe('User', () => {
 
     it('should_trim_whitespace_when_renaming', () => {
       // Arrange
-      const user = new User(validProps);
+      const user = new User(buildValidProps());
 
       // Act
       user.rename('  Ana Maria  ');
@@ -117,7 +138,7 @@ describe('User', () => {
 
     it('should_throw_error_when_renaming_with_empty_string', () => {
       // Arrange
-      const user = new User(validProps);
+      const user = new User(buildValidProps());
 
       // Act + Assert
       expect(() => user.rename('')).toThrow('Display name cannot be empty');
@@ -125,7 +146,7 @@ describe('User', () => {
 
     it('should_throw_error_when_renaming_with_only_whitespace', () => {
       // Arrange
-      const user = new User(validProps);
+      const user = new User(buildValidProps());
 
       // Act + Assert
       expect(() => user.rename('   ')).toThrow('Display name cannot be empty');
@@ -133,7 +154,7 @@ describe('User', () => {
 
     it('should_keep_original_name_when_rename_fails', () => {
       // Arrange
-      const user = new User(validProps);
+      const user = new User(buildValidProps());
       const originalName = user.displayName;
 
       // Act
@@ -151,40 +172,33 @@ describe('User', () => {
   // ============================================================
   // Encapsulation
   // ============================================================
-  // ============================================================
-  // Encapsulation
-  // ============================================================
- // ============================================================
-  // Encapsulation
-  // ============================================================
   describe('encapsulation', () => {
     it('should_throw_type_error_when_attempting_to_mutate_property', () => {
       // Arrange
-      const user = new User(validProps);
+      const user = new User(buildValidProps());
 
       // Act + Assert
-      // Getters have no setter. Any attempt to reassign must throw at runtime.
       expect(() => {
         // @ts-expect-error -- verifying encapsulation: no setter exists
-        user.email = 'hacker@evil.com';
+        user.email = new Email('hacker@evil.com');
       }).toThrow(TypeError);
     });
 
     it('should_keep_original_value_when_mutation_is_attempted', () => {
       // Arrange
-      const user = new User(validProps);
-      const originalEmail = user.email;
+      const user = new User(buildValidProps());
+      const originalEmailValue = user.email.value;
 
       // Act
       try {
         // @ts-expect-error -- verifying encapsulation: no setter exists
-        user.email = 'hacker@evil.com';
+        user.email = new Email('hacker@evil.com');
       } catch {
         // expected TypeError
       }
 
       // Assert
-      expect(user.email).toBe(originalEmail);
+      expect(user.email.value).toBe(originalEmailValue);
     });
   });
 });

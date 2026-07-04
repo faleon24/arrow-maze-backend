@@ -1,3 +1,5 @@
+import { Email } from './email';
+
 /**
  * User entity — represents a registered player.
  *
@@ -6,14 +8,17 @@
  * to keep its own state consistent (SRP).
  *
  * Business rules enforced:
- *   - Email must have a valid format
+ *   - Email must be a valid Email value object (validation delegated)
  *   - Display name cannot be empty or whitespace-only
  *   - Password hash cannot be empty
+ *
+ * Note: email format validation is delegated to the Email value object.
+ * User does not know how emails are validated — it just holds one.
  */
 
 export interface UserProps {
   id: string;
-  email: string;
+  email: Email;
   passwordHash: string;
   displayName: string;
   createdAt: Date;
@@ -21,7 +26,7 @@ export interface UserProps {
 
 export class User {
   private _id: string;
-  private _email: string;
+  private _email: Email;
   private _passwordHash: string;
   private _displayName: string;
   private _createdAt: Date;
@@ -44,7 +49,7 @@ export class User {
     return this._id;
   }
 
-  get email(): string {
+  get email(): Email {
     return this._email;
   }
 
@@ -73,10 +78,9 @@ export class User {
 
   // ---------- Private validation helpers ----------
 
-  private validateEmail(email: string): void {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      throw new Error('Invalid email format');
+  private validateEmail(email: Email): void {
+    if (!(email instanceof Email)) {
+      throw new Error('Email must be an Email value object');
     }
   }
 
