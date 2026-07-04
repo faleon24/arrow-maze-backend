@@ -99,6 +99,33 @@ This document tracks the use of AI tools throughout the development of the Arrow
 ---
 
 
+### Entry 4 — PasswordHash value object and IPasswordHasher outbound port
+
+**Date:** 2026-07-03
+**Tool:** Claude Opus 4.7
+**Task:** Introduce the first outbound port (`IPasswordHasher`) alongside a `PasswordHash` value object. Understand the distinction between representing data (VO) and declaring an external operation the application needs (port).
+
+**Prompt (paraphrased):**
+> Guide me through creating `PasswordHash` as a value object in the domain layer, and `IPasswordHasher` as an outbound port in the application layer. Explain why they belong in different layers, how this is Dependency Inversion in action, and refactor `User` to use `PasswordHash` instead of a raw string. Include a defensive `toString` that redacts the actual hash to avoid accidental logging.
+
+**Result:**
+- `src/domain/models/password-hash.ts`: immutable VO with basic structural validation (non-empty, minimum length of 20 chars to remain algorithm-agnostic), equality, and a redacted `toString`.
+- `test/domain/models/password-hash.spec.ts`: 8 unit tests across creation, equality, and safe string representation.
+- `src/application/ports/out/password-hasher.port.ts`: `IPasswordHasher` interface declaring async `hash` and `verify` operations. No implementation — that comes in the infrastructure layer.
+- `src/domain/models/user.ts`: refactored to accept `PasswordHash` instead of a raw string.
+- `test/domain/models/user.spec.ts`: updated to construct users with a `PasswordHash` VO and to include a new test case for the type check.
+
+**Modifications made by the developer:**
+- Chose a generic minimum length of 20 characters instead of coupling to bcrypt's 60-character format, so the VO stays algorithm-agnostic. If we switch from bcrypt to argon2 tomorrow, the VO does not need changes.
+- Kept `toString` returning `'[PasswordHash]'` on purpose. Reviewed and understood that leaking a real hash into logs is a real production risk; the redacted marker is a cheap defense.
+
+**Lessons learned:**
+- A value object represents *a thing*; a port represents *a capability needed from outside*. Mixing the two in the same layer collapses the hexagonal boundary. Keeping them separate makes DIP visible in the file layout, not just in the code.
+- Async `Promise<...>` on the port from day one avoids a costly refactor later. bcrypt/argon2 are always async in practice.
+- `redacted toString` is a defensive engineering habit worth adopting proactively rather than after the first incident in production.
+
+---
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:

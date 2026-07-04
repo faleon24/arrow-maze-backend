@@ -1,4 +1,5 @@
 import { Email } from './email';
+import { PasswordHash } from './password-hash';
 
 /**
  * User entity — represents a registered player.
@@ -8,18 +9,18 @@ import { Email } from './email';
  * to keep its own state consistent (SRP).
  *
  * Business rules enforced:
- *   - Email must be a valid Email value object (validation delegated)
+ *   - Email must be a valid Email value object (delegated)
+ *   - Password hash must be a valid PasswordHash value object (delegated)
  *   - Display name cannot be empty or whitespace-only
- *   - Password hash cannot be empty
  *
- * Note: email format validation is delegated to the Email value object.
- * User does not know how emails are validated — it just holds one.
+ * All format and structural concerns are delegated to the respective
+ * value objects. User only orchestrates their composition.
  */
 
 export interface UserProps {
   id: string;
   email: Email;
-  passwordHash: string;
+  passwordHash: PasswordHash;
   displayName: string;
   createdAt: Date;
 }
@@ -27,14 +28,14 @@ export interface UserProps {
 export class User {
   private _id: string;
   private _email: Email;
-  private _passwordHash: string;
+  private _passwordHash: PasswordHash;
   private _displayName: string;
   private _createdAt: Date;
 
   constructor(props: UserProps) {
     this.validateEmail(props.email);
-    this.validateDisplayName(props.displayName);
     this.validatePasswordHash(props.passwordHash);
+    this.validateDisplayName(props.displayName);
 
     this._id = props.id;
     this._email = props.email;
@@ -43,7 +44,7 @@ export class User {
     this._createdAt = props.createdAt;
   }
 
-  // ---------- Getters (read-only access from outside) ----------
+  // ---------- Getters ----------
 
   get id(): string {
     return this._id;
@@ -53,7 +54,7 @@ export class User {
     return this._email;
   }
 
-  get passwordHash(): string {
+  get passwordHash(): PasswordHash {
     return this._passwordHash;
   }
 
@@ -67,10 +68,6 @@ export class User {
 
   // ---------- Domain behavior ----------
 
-  /**
-   * Change the user's display name. Trims whitespace.
-   * Throws if the new name is empty or only whitespace.
-   */
   rename(newName: string): void {
     this.validateDisplayName(newName);
     this._displayName = newName.trim();
@@ -84,15 +81,15 @@ export class User {
     }
   }
 
-  private validateDisplayName(name: string): void {
-    if (!name || name.trim().length === 0) {
-      throw new Error('Display name cannot be empty');
+  private validatePasswordHash(hash: PasswordHash): void {
+    if (!(hash instanceof PasswordHash)) {
+      throw new Error('Password hash must be a PasswordHash value object');
     }
   }
 
-  private validatePasswordHash(hash: string): void {
-    if (!hash || hash.length === 0) {
-      throw new Error('Password hash cannot be empty');
+  private validateDisplayName(name: string): void {
+    if (!name || name.trim().length === 0) {
+      throw new Error('Display name cannot be empty');
     }
   }
 }

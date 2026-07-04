@@ -1,14 +1,14 @@
 import { User, UserProps } from '../../../src/domain/models/user';
 import { Email } from '../../../src/domain/models/email';
+import { PasswordHash } from '../../../src/domain/models/password-hash';
 
 describe('User', () => {
-  // Factory helper: builds a fresh set of valid props for each test.
-  // Using a function (not a shared const) prevents accidental mutation
-  // leaking between tests.
   const buildValidProps = (): UserProps => ({
     id: 'user-123',
     email: new Email('ana@example.com'),
-    passwordHash: 'hashed_password_value',
+    passwordHash: new PasswordHash(
+      '$2b$10$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNO',
+    ),
     displayName: 'Ana',
     createdAt: new Date('2026-01-15T10:00:00Z'),
   });
@@ -27,7 +27,7 @@ describe('User', () => {
       // Assert
       expect(user.id).toBe('user-123');
       expect(user.email.value).toBe('ana@example.com');
-      expect(user.passwordHash).toBe('hashed_password_value');
+      expect(user.passwordHash).toBeInstanceOf(PasswordHash);
       expect(user.displayName).toBe('Ana');
       expect(user.createdAt).toEqual(new Date('2026-01-15T10:00:00Z'));
     });
@@ -47,11 +47,24 @@ describe('User', () => {
       // Arrange
       const props = {
         ...buildValidProps(),
-        email: 'ana@example.com' as unknown as Email, // deliberately wrong
+        email: 'ana@example.com' as unknown as Email,
       };
 
       // Act + Assert
       expect(() => new User(props)).toThrow('Email must be an Email value object');
+    });
+
+    it('should_throw_error_when_password_hash_is_not_a_password_hash_value_object', () => {
+      // Arrange
+      const props = {
+        ...buildValidProps(),
+        passwordHash: 'raw_string_hash' as unknown as PasswordHash,
+      };
+
+      // Act + Assert
+      expect(() => new User(props)).toThrow(
+        'Password hash must be a PasswordHash value object',
+      );
     });
 
     it('should_throw_error_when_display_name_is_empty_string', () => {
@@ -69,20 +82,12 @@ describe('User', () => {
       // Act + Assert
       expect(() => new User(props)).toThrow('Display name cannot be empty');
     });
-
-    it('should_throw_error_when_password_hash_is_empty', () => {
-      // Arrange
-      const props = { ...buildValidProps(), passwordHash: '' };
-
-      // Act + Assert
-      expect(() => new User(props)).toThrow('Password hash cannot be empty');
-    });
   });
 
   // ============================================================
-  // Email delegation
+  // Value object delegation
   // ============================================================
-  describe('email delegation', () => {
+  describe('value object delegation', () => {
     it('should_expose_email_as_email_value_object', () => {
       // Arrange
       const props = buildValidProps();
@@ -94,19 +99,15 @@ describe('User', () => {
       expect(user.email).toBeInstanceOf(Email);
     });
 
-    it('should_normalize_email_via_email_value_object', () => {
+    it('should_expose_password_hash_as_password_hash_value_object', () => {
       // Arrange
-      const props = {
-        ...buildValidProps(),
-        email: new Email('  ANA@Example.COM  '),
-      };
+      const props = buildValidProps();
 
       // Act
       const user = new User(props);
 
       // Assert
-      // The Email VO normalizes; User just holds it.
-      expect(user.email.value).toBe('ana@example.com');
+      expect(user.passwordHash).toBeInstanceOf(PasswordHash);
     });
   });
 
