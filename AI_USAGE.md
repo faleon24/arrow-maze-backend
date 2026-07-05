@@ -152,7 +152,37 @@ This document tracks the use of AI tools throughout the development of the Arrow
 
 ---
 
+### Entry 6 — First real use case: RegisterUserUseCase with fakes-based tests
 
+**Date:** 2026-07-05
+**Tool:** Claude Opus 4.7
+**Task:** Implement the first application service (`RegisterUserUseCase`) that orchestrates the domain and every outbound port. Prove that the hexagonal design pays off by testing the use case with hand-written fakes instead of mocks.
+
+**Prompt (paraphrased):**
+> Guide me through writing `RegisterUserUseCase` that: (1) receives a command with email, password, displayName; (2) enforces email uniqueness via `IUserRepository`; (3) hashes the password via `IPasswordHasher`; (4) constructs a `User` with an id from `IIdGenerator` and a timestamp from `IClock`; (5) persists the user; (6) issues and returns an `AuthToken` from `ITokenService`. Then write unit tests using in-memory fakes for every port, not jest mocks.
+
+**Result:**
+- `src/application/usecases/auth/register-user.command.ts`: input DTO (plain data).
+- `src/application/usecases/auth/register-user.usecase.ts`: the application service, depending on five interfaces via constructor injection.
+- `src/application/ports/out/clock.port.ts`: `IClock` for deterministic timestamps under test.
+- `src/application/ports/out/id-generator.port.ts`: `IIdGenerator` for deterministic ids under test.
+- `test/application/usecases/auth/register-user.usecase.spec.ts`: 11 tests grouped in three concerns:
+  - happy path (persistence, token issuance, hashing verification, injected clock, injected id)
+  - business rule: email uniqueness (including case-insensitivity thanks to the `Email` VO)
+  - input validation delegated to domain (invalid email format, empty display name)
+- 100% coverage on the use case file.
+
+**Modifications made by the developer:**
+- Initial version of the `FakePasswordHasher` produced a "hash" that literally contained the plaintext (`hashed:${plaintext}:padding`). One test correctly caught this by asserting that the stored hash must not contain the plaintext. Fixed the fake to base64-encode the plaintext, which mirrors a real hasher's property of irreversibility at the string level.
+- Chose to write the fake `FakePasswordHasher` deterministically rather than using `jest.fn()` with hard-coded returns. Rationale: a hand-written fake is a real object with real behavior; a mock is a scripted actor. Fakes catch integration bugs that mocks hide.
+- Chose to inject `IIdGenerator` and `IClock` from day one instead of calling `crypto.randomUUID()` and `new Date()` inline. Rationale: the extra port cost is minimal, and it removes all non-determinism from the tests.
+
+**Lessons learned:**
+- The hexagonal architecture pays off exactly at this moment: writing the use case felt like plugging cables into an already-designed board. Every dependency was a named interface, every fake was a simple class, and every test asserted a behavior rather than an implementation detail.
+- Writing a fake that is too naive (like the initial `FakePasswordHasher`) produces tests that pass against the fake but would fail against a real implementation. The correct discipline is to make the fake honor the essential properties of the real thing, even if it does not honor the incidental ones.
+- Constructor injection with five ports may look verbose, but it makes the dependencies explicit and audit-friendly. When defending the design, the constructor signature *is* the documentation of what the use case needs.
+
+---
 
 ## Critical evaluation (in progress)
 
