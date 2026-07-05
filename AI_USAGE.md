@@ -234,6 +234,26 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - Chose to exercise real bcrypt with cost factor 4 instead of mocking the library. Rationale: a mock cannot fail; real bcrypt with rounds=4 still runs in milliseconds and provides genuine confidence that our adapter maps to the library correctly.
 - Made `verify` tolerate an empty plaintext by returning `false` instead of throwing. Rationale: an empty password submitted from an HTTP request is a normal failed login, not a programming error.
 - Restricted the rounds range to 4..15. Below 4 is insecure
+
+
+### Entry 9 — Three infrastructure adapters: SystemClock, UuidGenerator, JwtTokenService
+
+**Date:** 2026-07-05
+**Tool:** Claude Opus 4.7
+**Task:** Implement the remaining "simple" infrastructure adapters that the application layer needs before the API can be wired up: a real system clock, a UUID generator, and a JWT-based token service. Ensure each adapter is exercised against its real underlying dependency instead of a mock.
+
+**Prompt (paraphrased):**
+> Guide me through building three infrastructure adapters together: `SystemClock` implementing `IClock` (returns `new Date()`), `UuidGenerator` implementing `IIdGenerator` (uses `node:crypto.randomUUID()`), and `JwtTokenService` implementing `ITokenService` (uses `jsonwebtoken` with HS256). Discuss why the algorithm should be explicit on both signing and verification, and why every token verification failure should share the same generic message.
+
+**Result:**
+- `src/infrastructure/system/system-clock.ts`: trivial adapter over `new Date()`.
+- `src/infrastructure/system/uuid-generator.ts`: adapter over Node's `randomUUID()`, no external dependency.
+- `src/infrastructure/security/jwt-token-service.ts`: adapter over `jsonwebtoken`. Enforces HS256 explicitly on sign and verify, validates constructor inputs, and normalizes every verification failure into a single generic `Invalid token` error.
+- Tests:
+  - `test/infrastructure/system/system-clock.spec.ts`: 3 tests (returns Date, within realistic window, monotonic across calls).
+  - `test/infrastructure/system/uuid-generator.spec.ts`: 3 tests (returns string, matches RFC 4122 v4 regex, unique per call).
+  - `test/infrastructure/security/jwt-token-service.spec.ts`: 13 tests grouped by
+  
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
