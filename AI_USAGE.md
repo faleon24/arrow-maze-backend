@@ -211,6 +211,29 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - Copy-pasting large blocks into the wrong file is a real risk when iterating quickly. `wc -l` and `git status` before each commit are cheap habits that catch these mistakes early.
 
 ---
+
+### Entry 8 — First infrastructure adapter: BcryptPasswordHasher
+
+**Date:** 2026-07-05
+**Tool:** Claude Opus 4.7
+**Task:** Implement the first infrastructure adapter — `BcryptPasswordHasher` — that adapts the `bcrypt` npm library to the `IPasswordHasher` outbound port. Understand and defend the choice of exercising real bcrypt in tests instead of mocking it.
+
+**Prompt (paraphrased):**
+> Guide me through building `BcryptPasswordHasher` in the infrastructure layer. It should implement `IPasswordHasher`, accept a configurable cost factor (rounds) with sensible validation, hash and verify passwords using the real bcrypt library, and be covered by tests that exercise bcrypt itself (not a mock). Explain the Adapter pattern applied here and why running real bcrypt with a low cost factor is preferable to mocking.
+
+**Result:**
+- `src/infrastructure/security/bcrypt-password-hasher.ts`: adapter implementing `IPasswordHasher`. Constructor validates the rounds parameter (integer in 4..15). `hash` rejects empty plaintext; `verify` returns `false` for empty plaintext without throwing.
+- `test/infrastructure/security/bcrypt-password-hasher.spec.ts`: 12 tests grouped by concern:
+  - construction (valid range, below min, above max, non-integer)
+  - hash (returns PasswordHash VO, no plaintext leakage, different hash per call due to salt, empty plaintext rejected)
+  - verify (correct password, wrong password, empty plaintext)
+  - round trip (hash then verify immediately)
+- 100% coverage on the adapter.
+
+**Modifications made by the developer:**
+- Chose to exercise real bcrypt with cost factor 4 instead of mocking the library. Rationale: a mock cannot fail; real bcrypt with rounds=4 still runs in milliseconds and provides genuine confidence that our adapter maps to the library correctly.
+- Made `verify` tolerate an empty plaintext by returning `false` instead of throwing. Rationale: an empty password submitted from an HTTP request is a normal failed login, not a programming error.
+- Restricted the rounds range to 4..15. Below 4 is insecure
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
