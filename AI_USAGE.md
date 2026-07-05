@@ -184,6 +184,33 @@ This document tracks the use of AI tools throughout the development of the Arrow
 
 ---
 
+### Entry 7 — Second use case: LoginUseCase with security-first error handling
+
+**Date:** 2026-07-05
+**Tool:** Claude Opus 4.7
+**Task:** Implement `LoginUseCase` alongside `RegisterUserUseCase`. Understand and defend the decision to use a single generic error message for all authentication failure paths.
+
+**Prompt (paraphrased):**
+> Guide me through writing `LoginUseCase` that: (1) receives a command with email and password; (2) looks up the user by email; (3) verifies the password with `IPasswordHasher.verify`; (4) issues an `AuthToken` on success. Explain why the same error message should be used for unknown email, wrong password, and invalid email format, and add a test that specifically enforces this security property.
+
+**Result:**
+- `src/application/usecases/auth/login.command.ts`: input DTO with email and password.
+- `src/application/usecases/auth/login.usecase.ts`: the application service, depending on three interfaces. All failure paths throw a single "Invalid credentials" error. The `new Email(...)` construction is wrapped in try/catch to normalize the error surface.
+- `test/application/usecases/auth/login.usecase.spec.ts`: 8 tests grouped into three concerns:
+  - happy path (token issuance, correct user id, case-insensitive email match)
+  - failure paths (unknown email, wrong password, malformed email, no token issued on failure)
+  - security (explicit assertion that the error message is identical for unknown-email and wrong-password cases)
+
+**Modifications made by the developer:**
+- Accidentally pasted the login test code at the end of `register-user.usecase.spec.ts` on the first attempt, producing "Duplicate identifier" errors. Recovered by fully overwriting both spec files with clean content. Reinforced the habit of verifying `wc -l` on each file after edits, and checking that class/const identifiers appear only once.
+- Kept the `try/catch` around `new Email(command.email)` even though it feels defensive: without it, an ill-formed email would leak the message "Invalid email format" and betray the fact that the validation stage rejected the input. Preserving a uniform error surface across all failure branches is a deliberate part of the security posture.
+
+**Lessons learned:**
+- Same message for "unknown email" and "wrong password" prevents user enumeration attacks. A caller cannot use the error text to determine whether an email is registered. This is a small but important detail that many production systems still get wrong.
+- The security-property test (last block in the suite) locks the design decision in place. If a future contributor "improves" the message to be more descriptive, the test fails and forces a design conversation instead of a silent regression.
+- Copy-pasting large blocks into the wrong file is a real risk when iterating quickly. `wc -l` and `git status` before each commit are cheap habits that catch these mistakes early.
+
+---
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
