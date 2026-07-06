@@ -9,9 +9,13 @@ coverage/
 .idea/
 
 # Environment
+
+
 .env
 .env.local
 .env.*.local
+.env.*
+
 
 # Logs
 *.log
