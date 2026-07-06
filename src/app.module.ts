@@ -1,8 +1,148 @@
 import { Module } from '@nestjs/common';
 
+// Injection tokens (application layer contract)
+import {
+  USER_REPOSITORY,
+  PASSWORD_HASHER,
+  TOKEN_SERVICE,
+  CLOCK,
+  ID_GENERATOR,
+} from './application/ports/tokens';
+
+// Application layer — use cases (framework-agnostic)
+import { RegisterUserUseCase } from './application/usecases/auth/register-user.usecase';
+import { LoginUseCase } from './application/usecases/auth/login.usecase';
+
+// Application layer — port interfaces (only for typing the factory params)
+import { IUserRepository } from './application/ports/out/user-repository.port';
+import { IPasswordHasher } from './application/ports/out/password-hasher.port';
+import { ITokenService } from './application/ports/out/token-service.port';
+import { IClock } from './application/ports/out/clock.port';
+import { IIdGenerator } from './application/ports/out/id-generator.port';
+
+// Infrastructure layer — concrete adapters
+import { PrismaService } from './infrastructure/persistence/prisma.service';
+import { PostgresUserRepository } from './infrastructure/persistence/postgres-user.repository';
+import { BcryptPasswordHasher } from './infrastructure/security/bcrypt-password-hasher';
+import { JwtTokenService } from './infrastructure/security/jwt-token-service';
+import { SystemClock } from './infrastructure/system/system-clock';
+import { UuidGenerator } from './infrastructure/system/uuid-generator';
+
+/**
+ * AppModule is the composition root of the application.
+ *
+ * This is the ONLY file in the project that knows about concrete
+ * implementations of the outbound ports. Every other layer talks to
+ * interfaces (via injection tokens), and Nest resolves them here.
+ *
+ * The application layer (use cases) contains zero Nest imports. Use cases
+ * are wired via useFactory rather than @Injectable decorators, keeping
+ * them portable to any framework or runtime.
+ */
+
+/**
+ * Parses a human-friendly duration string ("7d", "1h", "3600s") into
+ * seconds. Kept as a local helper so JwtTokenService can stay a pure
+ * value receiver — parsing lives at the composition root, where env
+ * strings are turned into typed values.
+ */
+function parseExpiresIn(value: string): number {
+  const match = /^(\d+)([smhd])$/.exec(value);
+  if (!match) {
+    throw new Error(
+      `Invalid JWT_EXPIRES_IN value: "${value}". Expected format like "7d", "1h", "3600s".`,
+    );
+  }
+  const amount = parseInt(match[1], 10);
+  const unit = match[2];
+  const multipliers: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+  return amount * multipliers[unit];
+}
+
 @Module({
-  imports: [],
-  controllers: [],
-  providers: [],
+  providers: [
+    // ------------------------------------------------------------------
+    // Infrastructure: Prisma
+    // ------------------------------------------------------------------
+    PrismaService,
+
+    // ------------------------------------------------------------------
+    // Outbound port adapters — one per port, bound by its injection token
+    // ------------------------------------------------------------------
+    {
+      provide: USER_REPOSITORY,
+      useClass: PostgresUserRepository,
+    },
+    {
+      provide: PASSWORD_HASHER,
+      useClass: BcryptPasswordHasher,
+    },
+   {
+  provide: TOKEN_SERVICE,
+  useFactory: () => {
+    const secret = process.env.JWT_SECRET;
+    const expiresIn = process.env.JWT_EXPIRES_IN;
+
+    if (!secret) {
+      throw new Error(
+        'JWT_SECRET is not defined. Check that .env is loaded before AppModule instantiates providers.',
+      );
+    }
+
+    // JWT_EXPIRES_IN in the .env is a human-friendly string like "7d".
+    // JwtTokenService expects a number of seconds. Convert here so the
+    // adapter stays a dumb, deterministic value receiver.
+    const expiresInSeconds = parseExpiresIn(expiresIn ?? '7d');
+
+    return new JwtTokenService(secret, expiresInSeconds);
+  },
+},
+    {
+      provide: CLOCK,
+      useClass: SystemClock,
+    },
+    {
+      provide: ID_GENERATOR,
+      useClass: UuidGenerator,
+    },
+
+    // ------------------------------------------------------------------
+    // Application use cases — wired via factory so they stay
+    // Nest-agnostic. Parameter order MUST match each use case's
+    // constructor signature exactly.
+    // ------------------------------------------------------------------
+    {
+      provide: RegisterUserUseCase,
+      useFactory: (
+        users: IUserRepository,
+        hasher: IPasswordHasher,
+        tokens: ITokenService,
+        clock: IClock,
+        ids: IIdGenerator,
+      ) => new RegisterUserUseCase(users, hasher, tokens, clock, ids),
+      inject: [
+        USER_REPOSITORY,
+        PASSWORD_HASHER,
+        TOKEN_SERVICE,
+        CLOCK,
+        ID_GENERATOR,
+      ],
+    },
+    {
+      provide: LoginUseCase,
+      useFactory: (
+        users: IUserRepository,
+        hasher: IPasswordHasher,
+        tokens: ITokenService,
+      ) => new LoginUseCase(users, hasher, tokens),
+      inject: [USER_REPOSITORY, PASSWORD_HASHER, TOKEN_SERVICE],
+    },
+  ],
+  exports: [
+    // Exported so future modules (e.g. the auth controller module,
+    // or any feature module that reuses the use cases) can inject them.
+    RegisterUserUseCase,
+    LoginUseCase,
+  ],
 })
 export class AppModule {}
