@@ -334,6 +334,61 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - Keeping the mapper separate from the repository paid off: this adapter is ~30 lines of readable query code because all the translation logic lives elsewhere. SRP in action.
 - Prisma's `upsert` is the natural fit for a repository contract that says "insert or update, don't care which". Choosing it over exposing both operations preserves the port's abstraction.
 
+
+
+## Entry 12 — Integration tests against real PostgreSQL
+
+**Date:** 2026-07-05
+**Tool:** Claude Opus 4.7
+**Task:** Set up a separate test database, isolate integration tests from the dev environment, and prove that `PostgresUserRepository` works against real PostgreSQL.
+
+### Prompt (paraphrased)
+"Set up integration testing for the repository against a real Postgres database, following the same spirit we've applied with bcrypt and JWT (real dependencies, no mocks)."
+
+### Result
+- Created a dedicated `arrowmaze_test` PostgreSQL database and applied the existing Prisma migrations to it via `DATABASE_URL=... npx prisma migrate deploy`.
+- Added `.env.test` with a distinct connection string; extended `.gitignore` with `.env.*` so it cannot leak.
+- Installed `dotenv` as a direct devDependency (previously only transitive through Prisma) and added `test/jest-integration.setup.ts` that loads `.env.test` before any test module runs.
+- Added a defense-in-depth guard: the setup file refuses to run tests unless `DATABASE_URL` explicitly points to `arrowmaze_test`. This prevents catastrophic accidents where a misconfigured env would truncate the dev database.
+- Added `test/jest-integration.json` with a separate `.integration-spec.ts` regex and `--runInBand`, since integration tests share state (the DB) and cannot run in parallel.
+- Added `npm run test:integration` script, keeping unit tests (`npm test`) fast and free of external dependencies.
+- Created a reusable `DatabaseCleaner` helper (`test/infrastructure/helpers/`) that truncates all project-owned tables between tests using `TRUNCATE ... RESTART IDENTITY CASCADE`.
+- Wrote 9 integration tests for `PostgresUserRepository`:
+  - `findById` — returns `null` when missing, returns `User` when present.
+  - `findByEmail` — same two paths.
+  - `save (insert)` — persists a new user; persists multiple users with distinct emails.
+  - `save (update)` — updates mutable fields; refuses to overwrite `createdAt` even if the incoming aggregate carries a different value (immutability invariant enforced by the adapter itself).
+  - `round-trip integrity` — a full save + read cycle preserves every field, including value objects.
+
+### Files affected
+- `.gitignore` (added `.env.*` pattern)
+- `.env.test` (new, git-ignored)
+- `package.json`, `package-lock.json` (dotenv devDependency + `test:integration` script)
+- `test/jest-integration.json` (new)
+- `test/jest-integration.setup.ts` (new)
+- `test/infrastructure/helpers/database-cleaner.ts` (new)
+- `test/infrastructure/persistence/postgres-user.repository.integration-spec.ts` (new, 9 tests)
+
+**Test counts:**
+- Unit tests: 108 passing across 11 suites (unchanged).
+- Integration tests: 9 passing across 1 suite.
+
+### Modifications made by the developer
+- Verified the existence of `arrowmaze_test` before recreating it, catching a wasted step early.
+- Diagnosed a `psql -l` failure as a client/server version mismatch (`daticulocale` column) and worked around it with a direct query to `pg_database` instead of blindly upgrading tools mid-task.
+- Chose to keep `DatabaseCleaner` one level above `persistence/` because the helper is not persistence-specific — future test suites (games, sessions) will reuse it. This was decided intentionally after noticing the file had been placed there by accident.
+- Split the work into two atomic commits (test infrastructure vs. the first test using it) so the reusable scaffolding is clearly separated from its first application in the history.
+
+### Lessons learned
+- A test that talks to a real database is only trustworthy if that database is isolated. Sharing the dev DB would either corrupt development data or force tests to be non-deterministic. A separate `arrowmaze_test` DB is the equivalent of a clean room — the same discipline that unit tests get for free with mocks, extended to integration tests.
+- Environment guards belong in the test setup, not in a README. A programmer will read the setup file (because it fails). A programmer may or may not read the README. The explicit `throw` if `DATABASE_URL` does not contain `arrowmaze_test` catches the class of bugs where "it worked on my machine because my `.env.test` happened to be right".
+- Splitting Jest into two configs (unit vs. integration) preserves the fast feedback loop of unit tests. Merging them would drag every commit through a database roundtrip, which erodes the habit of running tests often.
+- Deciding not to test `PrismaService` and `PostgresUserRepository` in isolation (entry 11) paid off here: these integration tests exercise exactly the code that has no unit tests, and they exercise it against the same engine that will run in production. Coverage without meaning would have been a distraction; this is coverage that would actually catch a real bug.
+- The "small accidental move" of `DatabaseCleaner` to `test/infrastructure/helpers/` turned out to be the correct structural decision. Noticing it before committing is what stopped it from becoming technical debt disguised as a working test.
+
+
+
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
