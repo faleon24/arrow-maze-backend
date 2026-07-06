@@ -253,7 +253,53 @@ This document tracks the use of AI tools throughout the development of the Arrow
   - `test/infrastructure/system/system-clock.spec.ts`: 3 tests (returns Date, within realistic window, monotonic across calls).
   - `test/infrastructure/system/uuid-generator.spec.ts`: 3 tests (returns string, matches RFC 4122 v4 regex, unique per call).
   - `test/infrastructure/security/jwt-token-service.spec.ts`: 13 tests grouped by
-  
+
+
+## Entry 10 — Prisma setup + UserMapper
+
+**Date:** 2026-07-05
+**Tool:** Claude Opus 4.7 (via chat handoff)
+**Task:** Integrate Prisma ORM with PostgreSQL and add a mapper to translate between the `User` domain aggregate and the persistence row.
+
+### Prompt (paraphrased)
+"Continue where we left off — set up Prisma with the User model and create the mapper between domain and persistence."
+
+### Result
+- Installed Prisma 6 (had to downgrade from Prisma 7.8.0, which introduced breaking config changes: `url` no longer allowed in `schema.prisma`, `PrismaClient` requires an adapter).
+- Defined the `User` model in `prisma/schema.prisma` with `id`, `email` (unique), `passwordHash`, `displayName`, `createdAt`.
+- Generated two migrations:
+  - `init` — creates the `users` table.
+  - `make_display_name_required` — removes the `NULL` constraint from `displayName` to enforce a domain invariant at the DB level.
+- Added `src/infrastructure/persistence/user.mapper.ts` with two static methods:
+  - `toDomain(row)` — rebuilds the `User` aggregate, wrapping the email string in `Email` and the hash in `PasswordHash`.
+  - `toPersistence(user)` — flattens the aggregate into a plain row shape ready for Prisma.
+- Added 12 unit tests covering both directions, round-trip integrity, and fail-fast behavior on invalid rows.
+
+### Files affected
+- `prisma/schema.prisma` (modified)
+- `prisma/migrations/*` (new — 2 migrations)
+- `prisma.config.ts` (already present)
+- `package.json`, `package-lock.json` (Prisma 6 pin)
+- `src/infrastructure/persistence/user.mapper.ts` (new)
+- `test/infrastructure/persistence/user.mapper.spec.ts` (new, 12 tests)
+
+**Coverage:** UserMapper at 100% statements/branches.
+**Test count:** 108 passing across 11 suites (was 96 across 10).
+
+### Modifications made by the developer
+- Detected via TypeScript error that the schema had `displayName String?` while `UserProps` declared it as required — chose to align the DB to the domain (Option 1) rather than weaken the domain invariant.
+- Verified the actual shape of `UserProps`, the getter names (`.value`), and the User constructor signature before writing the mapper, avoiding blind assumptions.
+- Confirmed each migration with `psql arrowmaze -c "\d users"` before committing.
+- Split the work into two atomic commits (Prisma setup + UserMapper) for a cleaner history.
+
+### Lessons learned
+- Recently released framework versions (Prisma 7 was 6 weeks old at the time) can silently break setup steps that used to be trivial. Downgrading is not "settling for less" — it's picking the version that matches the tutorials, docs, and community answers you'll actually consult.
+- When domain and DB disagree on a constraint, the direction of resolution matters: in Clean Architecture, the DB adapts to the domain, not the other way around. Nullable columns backing non-nullable domain fields are a smell — they push validation to the read path and defeat fail-fast.
+- Separating a mapper from the repository is not premature abstraction. It isolates two responsibilities (persistence vs. translation), lets each be tested in isolation, and gives a concrete SRP example for the defense.
+- Round-trip tests (`toPersistence(toDomain(x)) === x`) are the cheapest way to catch information loss in a mapper, and they double as a proof that both directions stay in sync as the model evolves.
+
+
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
