@@ -300,6 +300,40 @@ This document tracks the use of AI tools throughout the development of the Arrow
 
 
 
+## Entry 11 — PrismaService and PostgresUserRepository
+
+**Date:** 2026-07-05
+**Tool:** Claude Opus 4.7
+**Task:** Wire Prisma into the infrastructure layer through a lifecycle-aware service and a repository adapter that implements the `IUserRepository` port.
+
+### Prompt (paraphrased)
+"Add the PrismaService with lifecycle hooks and the PostgresUserRepository that implements the outbound port."
+
+### Result
+- Added `PrismaService` extending `PrismaClient` and implementing `OnModuleInit` / `OnModuleDestroy` so the connection pool follows the Nest module lifecycle.
+- Added `PostgresUserRepository` implementing `IUserRepository`:
+  - `findById` and `findByEmail` use `findUnique` and delegate reconstruction to `UserMapper.toDomain`.
+  - `save` uses Prisma's `upsert` to honor the port contract ("insert or update at the implementation's discretion") while omitting `createdAt` from the update branch to keep it immutable.
+- No unit tests written for either file; rationale documented in the commit message and reinforced below.
+
+### Files affected
+- `src/infrastructure/persistence/prisma.service.ts` (new)
+- `src/infrastructure/persistence/postgres-user.repository.ts` (new)
+
+**Test count:** unchanged at 108 passing across 11 suites (integration tests come in block 9.3).
+
+### Modifications made by the developer
+- Verified the exact shape of `IUserRepository` before writing the adapter, confirming the method names, argument types (`string` vs `Email` VO), and return types.
+- Chose `upsert` over exposing `create`/`update` separately, so the application layer never has to ask "does this user exist yet?" before saving.
+- Explicitly omitted `createdAt` from the `update` payload so the repository enforces the invariant that creation time is immutable, even if a future domain change accidentally exposed it as mutable.
+- Skipped unit tests for both files deliberately — the deferral is a design choice, not an omission.
+
+### Lessons learned
+- Some code genuinely does not deserve unit tests. `PrismaService` is a two-line lifecycle wrapper; a mocked test would only prove that Jest can call methods on a stub. `PostgresUserRepository` is thin glue that only makes sense when exercised against a real query engine. Mocking Prisma to "cover" it would test the mock, not the code. Both files will be exercised by integration tests, which is where their behavior actually lives.
+- Deciding *what not to test* is as much a design skill as deciding what to test. Recognizing it explicitly (and defending it) is stronger than blindly chasing 100% coverage with hollow tests.
+- Keeping the mapper separate from the repository paid off: this adapter is ~30 lines of readable query code because all the translation logic lives elsewhere. SRP in action.
+- Prisma's `upsert` is the natural fit for a repository contract that says "insert or update, don't care which". Choosing it over exposing both operations preserves the port's abstraction.
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
