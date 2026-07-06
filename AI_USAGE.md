@@ -386,6 +386,46 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - Deciding not to test `PrismaService` and `PostgresUserRepository` in isolation (entry 11) paid off here: these integration tests exercise exactly the code that has no unit tests, and they exercise it against the same engine that will run in production. Coverage without meaning would have been a distraction; this is coverage that would actually catch a real bug.
 - The "small accidental move" of `DatabaseCleaner` to `test/infrastructure/helpers/` turned out to be the correct structural decision. Noticing it before committing is what stopped it from becoming technical debt disguised as a working test.
 
+## Entry 13 — AppModule as the composition root
+
+**Date:** 2026-07-06
+**Tool:** Claude Opus 4.7
+**Task:** Wire the whole application together in `AppModule` so Nest can resolve every use case and adapter through DI, and get the app booting cleanly for the first time.
+
+### Prompt (paraphrased)
+"Cable AppModule with providers so the app actually runs, without leaking Nest imports into the application layer."
+
+### Result
+- Added `src/application/ports/tokens.ts` with one `Symbol` per outbound port (`USER_REPOSITORY`, `PASSWORD_HASHER`, `TOKEN_SERVICE`, `CLOCK`, `ID_GENERATOR`). Tokens live in the application layer because they are part of the port contract, not a framework concern.
+- Rewrote `src/app.module.ts` as the composition root:
+  - `PrismaService` registered as a plain class provider.
+  - Each adapter (`PostgresUserRepository`, `BcryptPasswordHasher`, `JwtTokenService`, `SystemClock`, `UuidGenerator`) registered under its port token via `useClass` or `useFactory` where env values are needed.
+  - `JwtTokenService` wired via `useFactory` that reads `JWT_SECRET` and `JWT_EXPIRES_IN` from the env and converts the human-friendly duration string ("7d") into seconds using a local `parseExpiresIn` helper.
+  - Use cases (`RegisterUserUseCase`, `LoginUseCase`) wired via `useFactory` with `inject: [...tokens]`, preserving the application layer's independence from Nest.
+- Added `import 'dotenv/config'` as the very first line of `main.ts` so env vars are populated before any provider is instantiated.
+- Verified the app boots without errors, listens on `/api`, and returns 404 for unknown routes (expected — no controllers yet).
+
+### Files affected
+- `src/application/ports/tokens.ts` (new)
+- `src/main.ts` (added dotenv import)
+- `src/app.module.ts` (rewritten as composition root)
+
+**Test counts:** unchanged (108 unit + 9 integration). This block is about wiring, not new behavior.
+
+### Modifications made by the developer
+- Diagnosed the initial "JWT secret cannot be empty" error by reading `JwtTokenService` and confirming it received the secret as a constructor argument, not from `process.env` — this drove the decision to use `useFactory` for that specific provider instead of contaminating the adapter with env access.
+- Rejected the temptation to add `@Injectable()` decorators to the use cases and instead used `useFactory` for them, keeping every use case free of Nest imports. This is a defense-ready choice: the application layer is portable to any framework.
+- Verified `.env` location, `import 'dotenv/config'` position, and `JWT_SECRET` shape via `head`, `pwd`, and `grep` before touching code — the error message pointed at env loading but the actual root cause was elsewhere; skipping the diagnosis would have led to changes in the wrong file.
+- Confirmed `BcryptPasswordHasher` has a default constructor argument and did NOT need the factory treatment, avoiding gratuitous refactoring.
+
+### Lessons learned
+- The composition root should be the only file in the project that knows both interfaces and their implementations. Everything else talks to abstractions. Getting this right is what makes a codebase testable, portable, and honest about its dependencies.
+- Env-var parsing belongs at the composition root, not inside adapters. An adapter that reads `process.env` is a hidden dependency — it can't be tested without mutating global state. An adapter that receives typed values in its constructor is a pure function of its inputs.
+- Nest's `useFactory` is the escape hatch that lets you use DI without letting the framework leak into your domain. Every time it appears, it's because a class chose to remain framework-agnostic. That's a feature.
+- Reading the actual constructor signatures before writing the module (via `grep`) prevented at least one bug (wrong argument order in `RegisterUserUseCase`). Assumptions about "obvious" parameter order are how integration bugs sneak in at composition roots.
+- When an error message says "X is empty", the interesting question is not "how do I fill X" but "who is supposed to fill X, and did they run?". The fix flowed naturally once we understood that `JwtTokenService` didn't consume the env — the module did.
+
+
 
 
 
