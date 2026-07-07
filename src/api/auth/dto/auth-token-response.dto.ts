@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { AuthToken } from '../../../domain/models/auth-token';
 
 /**
@@ -7,16 +8,19 @@ import { AuthToken } from '../../../domain/models/auth-token';
  * Serializes the AuthToken domain value object into the JSON
  * shape that clients consume: the raw token string and an
  * ISO 8601 timestamp for the expiration.
- *
- * The static `from` factory is a tiny mapper. Keeping it here
- * (rather than in a separate mapper class) is deliberate: the
- * transformation is trivial and lives right next to the shape
- * it produces. If this response ever grows more fields sourced
- * from multiple domain objects, we would extract a dedicated
- * mapper under api/auth/mappers/.
  */
 export class AuthTokenResponseDto {
+  @ApiProperty({
+    description: 'Signed JWT to send as a Bearer token on protected routes.',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI...',
+  })
   readonly token: string;
+
+  @ApiProperty({
+    description: 'Token expiration timestamp in ISO 8601 format.',
+    example: '2026-07-14T00:48:39.063Z',
+    format: 'date-time',
+  })
   readonly expiresAt: string;
 
   private constructor(token: string, expiresAt: string) {
