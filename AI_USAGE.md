@@ -455,6 +455,43 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - The default 500 response for uncaught domain errors leaks internal implementation details (Error message, stack trace in server logs). Block 11.2 will introduce typed domain errors and a global exception filter to map them to proper HTTP status codes (409 for duplicate email, 401 for invalid credentials).
 
 
+## Entry 15
+
+**Date**: 2026-07-06
+**Tool**: Claude Opus 4.7 (via claude.ai)
+**Task**: Add a global exception filter and typed domain errors (Block 11.2) — the project's first AOP aspect (centralised exception handling).
+
+**Prompt (paraphrased)**: The auth endpoints were returning HTTP 500 for domain-level failures (duplicate email, invalid credentials) because the use cases threw generic Error objects. I asked Claude to introduce typed domain errors and a global NestJS exception filter that maps them to proper HTTP status codes, without adding any try/catch or HTTP knowledge to the controllers or use cases. This is meant to be the first of the AOP aspects the rubric requires (Section 3.4, "Centralised Exception Handling"), implemented with a SOLID strategy rather than an AOP library.
+
+**Result**: Claude produced:
+- A `DomainError` abstract base class (with a `code` field and a prototype-chain fix so `instanceof` works across TS targets), plus `EmailAlreadyRegisteredError` (code EMAIL_ALREADY_REGISTERED) and `InvalidCredentialsError` (code INVALID_CREDENTIALS), all under `src/domain/errors/`.
+- Refactored `RegisterUserUseCase` and `LoginUseCase` to throw the typed errors instead of generic Error.
+- A global `DomainExceptionFilter` (`@Catch()`) that discriminates three cases: DomainError (mapped to status via an OCP-friendly Map, defaulting to 400), Nest HttpException (status/message preserved, so the ValidationPipe's 400 keeps working), and any other error (generic 500 that logs the stack on the server but never leaks internals to the client). All errors are returned in one consistent envelope: statusCode, error, message, code, timestamp, path.
+- Registered the filter globally in `main.ts` via `app.useGlobalFilters`.
+- 8 unit tests for the filter using hand-written fakes for ArgumentsHost / Response / Request.
+
+**Files affected**:
+- `src/domain/errors/domain-error.ts` (new)
+- `src/domain/errors/email-already-registered.error.ts` (new)
+- `src/domain/errors/invalid-credentials.error.ts` (new)
+- `src/domain/errors/index.ts` (new)
+- `src/application/usecases/auth/register-user.usecase.ts` (throw typed error)
+- `src/application/usecases/auth/login.usecase.ts` (throw typed error, 3 sites)
+- `src/api/filters/domain-exception.filter.ts` (new)
+- `src/main.ts` (register global filter)
+- `test/application/usecases/auth/register-user.usecase.spec.ts` (assert on type)
+- `test/application/usecases/auth/login.usecase.spec.ts` (assert on type)
+- `test/api/filters/domain-exception.filter.spec.ts` (new, 8 tests)
+
+**Modifications made by the developer**:
+- Updated the use-case tests to assert on error *type* (`toBeInstanceOf`) instead of on the error message string, after changing the register error message to include the offending email broke two string-based assertions. Deliberately left the login security test (`should_use_the_exact_same_error_message...`) asserting on the message, because there the message uniformity IS the security property being verified.
+- Verified all four HTTP paths manually with `curl -i`: duplicate registration now returns 409 (was 500), wrong password returns 401 (was 500), invalid payload still returns 400 (ValidationPipe untouched), valid login still returns 200.
+
+**Lessons learned**:
+- This is the centrepiece AOP aspect for the defence. The cross-cutting concern (error -> HTTP translation) is fully separated from business code: controllers and use cases contain zero try/catch for HTTP mapping. The SOLID strategy is explicit — OCP via the status Map (new domain errors need one entry, never a code change to `catch`), SRP (the filter only translates), DIP (it branches on the DomainError abstraction).
+- Extending the built-in Error class in TypeScript silently breaks `instanceof` unless you call `Object.setPrototypeOf(this, new.target.prototype)` in the base constructor. Without it, the filter's `instanceof DomainError` check would fail and every domain error would fall through to 500.
+- A generic `@Catch()` filter intercepts Nest's own HttpExceptions too, so the filter must explicitly re-handle them (branch 2) or it would break the ValidationPipe's 400 responses. Confirmed with a smoke test that the 400 still carries the aggregated validation messages.
+- Asserting on error type instead of error message makes tests robust to wording changes — but the reverse is correct when the message itself is the observable behaviour (the anti-enumeration security test). Knowing which is which is the point of "test behaviour, not implementation".
 
 ## Critical evaluation (in progress)
 
