@@ -9,6 +9,7 @@ import { IPasswordHasher } from '../../../../src/application/ports/out/password-
 import { ITokenService } from '../../../../src/application/ports/out/token-service.port';
 import { IClock } from '../../../../src/application/ports/out/clock.port';
 import { IIdGenerator } from '../../../../src/application/ports/out/id-generator.port';
+import { EmailAlreadyRegisteredError } from '../../../../src/domain/errors';
 
 // ============================================================
 // Fakes
@@ -163,8 +164,8 @@ describe('RegisterUserUseCase', () => {
       const { usecase } = buildDependencies();
       await usecase.execute(validCommand());
 
-      await expect(usecase.execute(validCommand())).rejects.toThrow(
-        'An account with this email already exists',
+      await expect(usecase.execute(validCommand())).rejects.toBeInstanceOf(
+        EmailAlreadyRegisteredError,
       );
     });
 
@@ -193,7 +194,7 @@ describe('RegisterUserUseCase', () => {
           ...validCommand(),
           email: 'ANA@EXAMPLE.COM',
         }),
-      ).rejects.toThrow('An account with this email already exists');
+      ).rejects.toBeInstanceOf(EmailAlreadyRegisteredError);
     });
   });
 

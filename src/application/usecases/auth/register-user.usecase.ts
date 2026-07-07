@@ -7,6 +7,7 @@ import { ITokenService } from '../../ports/out/token-service.port';
 import { IClock } from '../../ports/out/clock.port';
 import { IIdGenerator } from '../../ports/out/id-generator.port';
 import { RegisterUserCommand } from './register-user.command';
+import { EmailAlreadyRegisteredError } from '../../../domain/errors';
 
 /**
  * RegisterUserUseCase — application service that orchestrates
@@ -48,7 +49,7 @@ export class RegisterUserUseCase {
     //    not in the entity, because it requires a repository query.
     const existing = await this.users.findByEmail(email);
     if (existing !== null) {
-      throw new Error('An account with this email already exists');
+      throw new EmailAlreadyRegisteredError(email.value);
     }
 
     // 3. Hash the password. Plaintext never touches the entity.

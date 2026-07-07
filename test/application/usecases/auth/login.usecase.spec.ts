@@ -7,6 +7,7 @@ import { AuthToken } from '../../../../src/domain/models/auth-token';
 import { IUserRepository } from '../../../../src/application/ports/out/user-repository.port';
 import { IPasswordHasher } from '../../../../src/application/ports/out/password-hasher.port';
 import { ITokenService } from '../../../../src/application/ports/out/token-service.port';
+import { InvalidCredentialsError } from '../../../../src/domain/errors';
 
 // ============================================================
 // Fakes
@@ -137,8 +138,8 @@ describe('LoginUseCase', () => {
     it('should_throw_invalid_credentials_when_email_is_unknown', async () => {
       const { usecase } = buildDependencies();
 
-      await expect(usecase.execute(validCommand())).rejects.toThrow(
-        'Invalid credentials',
+      await expect(usecase.execute(validCommand())).rejects.toBeInstanceOf(
+        InvalidCredentialsError,
       );
     });
 
@@ -150,9 +151,9 @@ describe('LoginUseCase', () => {
       await expect(
         usecase.execute({
           email: 'ana@example.com',
-          password: 'a_different_wrong_password_9999',
-        }),
-      ).rejects.toThrow('Invalid credentials');
+         password: 'a_different_wrong_password_9999',
+      }),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
     });
 
     it('should_throw_invalid_credentials_when_email_format_is_invalid', async () => {
@@ -161,9 +162,9 @@ describe('LoginUseCase', () => {
       await expect(
         usecase.execute({
           email: 'not-a-real-email',
-          password: 'anything',
-        }),
-      ).rejects.toThrow('Invalid credentials');
+        password: 'anything',
+      }),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
     });
 
     it('should_not_issue_a_token_when_credentials_are_invalid', async () => {

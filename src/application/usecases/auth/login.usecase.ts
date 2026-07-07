@@ -4,7 +4,7 @@ import { IUserRepository } from '../../ports/out/user-repository.port';
 import { IPasswordHasher } from '../../ports/out/password-hasher.port';
 import { ITokenService } from '../../ports/out/token-service.port';
 import { LoginCommand } from './login.command';
-
+import { InvalidCredentialsError } from '../../../domain/errors';
 /**
  * LoginUseCase — application service that authenticates a user
  * and issues an auth token on success.
@@ -37,14 +37,14 @@ export class LoginUseCase {
     try {
       email = new Email(command.email);
     } catch {
-      throw new Error('Invalid credentials');
+      throw new InvalidCredentialsError();
     }
 
     // 2. Look up the user. A miss is not distinguishable from a
     //    wrong password from the caller's perspective.
     const user = await this.users.findByEmail(email);
     if (user === null) {
-      throw new Error('Invalid credentials');
+      throw new InvalidCredentialsError();
     }
 
     // 3. Verify the password against the stored hash.
@@ -53,7 +53,7 @@ export class LoginUseCase {
       user.passwordHash,
     );
     if (!matches) {
-      throw new Error('Invalid credentials');
+      throw new InvalidCredentialsError();
     }
 
     // 4. On success, issue and return the auth token.
