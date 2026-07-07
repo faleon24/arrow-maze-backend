@@ -4,6 +4,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { DomainExceptionFilter } from './api/filters/domain-exception.filter';
+import { LoggingInterceptor } from './api/interceptors/logging.interceptor';
+
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -16,6 +18,8 @@ async function bootstrap() {
     }),
   );
   app.useGlobalFilters(new DomainExceptionFilter());
+
+  app.useGlobalInterceptors(new LoggingInterceptor());
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Arrow Maze API')
