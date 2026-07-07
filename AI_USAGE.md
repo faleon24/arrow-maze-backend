@@ -558,6 +558,35 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - The anti-enumeration property is now verified at every level: unit (use case), and E2E (real HTTP round-trip). A security guarantee that holds end-to-end is far stronger evidence than a unit test alone.
 
 
+## Entry 18 — Logging interceptor (AOP aspect #2)
+
+**Date**: 2026-07-07
+**Tool**: Claude Opus 4.7 (via claude.ai)
+**Task**: Add a global logging/tracing interceptor as the second AOP aspect (Block 12), keeping the tracing concern out of the business code.
+
+**Prompt (paraphrased)**: With the exception filter already serving as the first AOP aspect, I asked Claude to add a NestJS interceptor that logs the entry, exit and duration of every request without putting any logger call inside the use cases or controllers, matching the rubric's "logging and tracing" aspect (Section 3.4). I wanted it registered globally, implemented with a SOLID strategy, and — importantly — I did not want it to log request bodies, since those contain plaintext passwords.
+
+**Result**: Claude produced:
+- `LoggingInterceptor` (`src/api/interceptors/logging.interceptor.ts`), a global NestInterceptor that records `--> METHOD url` on entry and `<-- METHOD url status elapsedMs` on exit, using RxJS `tap` to hook the "after" phase onto the response stream. On error it logs a warning with the error name/message and elapsed time, then lets the error propagate to the exception filter (it does not swallow it).
+- Registered it globally in `main.ts` via `app.useGlobalInterceptors`.
+- 4 unit tests using fakes for ExecutionContext and CallHandler (the latter returning an RxJS Observable), covering value pass-through, entry/exit logging, error logging + re-throw, and a guard that no log line contains the word "password".
+
+**Files affected**:
+- `src/api/interceptors/logging.interceptor.ts` (new)
+- `src/main.ts` (register global interceptor)
+- `test/api/interceptors/logging.interceptor.spec.ts` (new, 4 tests)
+
+**Modifications made by the developer**:
+- First run failed because the FakeCallHandler was typed with `ReturnType<typeof of>`, which does not match the overloaded RxJS `of` and rejected the observable argument. Claude diagnosed it as a typing issue (the suite failed to compile, so its tests never ran) and fixed it by typing the fake as `Observable<unknown>`, matching the CallHandler interface.
+- Verified manually with curl: a failed login logged `--> POST /api/auth/login` and `<-- ... FAILED (InvalidCredentialsError: Invalid credentials) 7ms`, with the password from the request body NOT appearing anywhere in the logs.
+
+**Lessons learned**:
+- Interceptor vs filter is the clean way to explain two different AOP mechanisms in the defence: the interceptor runs on every request with a before/after phase (timing), while the filter runs only on failure (error mapping). The two aspects collaborate — the interceptor observed the typed InvalidCredentialsError and the filter turned it into the 401 — yet neither touches the business code.
+- Security by omission is a deliberate design choice worth defending: the interceptor logs only method, path, status and duration, never the body/headers/query, mirroring the redacted toString() on PasswordHash and AuthToken. A naive logger would leak plaintext passwords.
+- Typing test fakes that return RxJS streams: use `Observable<unknown>` for the CallHandler stub, not `ReturnType<typeof of>`. The latter does not generalise across of()/throwError() and breaks compilation.
+- Interceptors that log errors must re-throw (RxJS `tap`'s error callback observes without consuming), so the exception filter still produces the HTTP response. The test asserts the error propagates.
+
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
