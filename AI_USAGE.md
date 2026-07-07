@@ -426,7 +426,7 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - When an error message says "X is empty", the interesting question is not "how do I fill X" but "who is supposed to fill X, and did they run?". The fix flowed naturally once we understood that `JwtTokenService` didn't consume the env — the module did.
 
 
-## Entry 14
+## Entry 14 — Auth REST controller (DTOs + AuthController)
 
 **Date**: 2026-07-06
 **Tool**: Claude Opus 4.7 (via claude.ai)
@@ -455,7 +455,7 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - The default 500 response for uncaught domain errors leaks internal implementation details (Error message, stack trace in server logs). Block 11.2 will introduce typed domain errors and a global exception filter to map them to proper HTTP status codes (409 for duplicate email, 401 for invalid credentials).
 
 
-## Entry 15
+## Entry 15 — Global exception filter with typed domain errors
 
 **Date**: 2026-07-06
 **Tool**: Claude Opus 4.7 (via claude.ai)
@@ -493,7 +493,8 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - A generic `@Catch()` filter intercepts Nest's own HttpExceptions too, so the filter must explicitly re-handle them (branch 2) or it would break the ValidationPipe's 400 responses. Confirmed with a smoke test that the 400 still carries the aggregated validation messages.
 - Asserting on error type instead of error message makes tests robust to wording changes — but the reverse is correct when the message itself is the observable behaviour (the anti-enumeration security test). Knowing which is which is the point of "test behaviour, not implementation".
 
-## Entry 16
+
+## Entry 16 — Swagger / OpenAPI documentation
 
 **Date**: 2026-07-06
 **Tool**: Claude Opus 4.7 (via claude.ai)
@@ -526,7 +527,35 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - SwaggerModule.setup respects the global prefix, so the correct path is 'api/docs' (no leading slash) to land at /api/docs rather than /docs.
 
 
+## Entry 17 — End-to-end tests for the auth endpoints (supertest)
 
+**Date**: 2026-07-06
+**Tool**: Claude Opus 4.7 (via claude.ai)
+**Task**: Add end-to-end tests (Block 11.4) that drive the whole application over HTTP, closing Block 11.
+
+**Prompt (paraphrased)**: With the auth endpoints, exception filter and Swagger docs done, I asked Claude to add E2E tests using supertest that boot the entire Nest app and hit the endpoints over real HTTP against the arrowmaze_test database. I wanted them to reuse the existing integration guard (which refuses to run unless DATABASE_URL points at arrowmaze_test) and the existing DatabaseCleaner, and to run in-band since they touch the database.
+
+**Result**: Claude:
+- Fixed the pre-existing jest-e2e.json (from the Nest scaffold): changed rootDir to '..' and added setupFiles pointing at the shared jest-integration.setup.ts guard, so E2E tests cannot touch the dev database.
+- Added --runInBand to the test:e2e script.
+- Wrote test/api/auth/auth.e2e-spec.ts: 8 tests booting the full AppModule via Test.createTestingModule, configured exactly like main.ts (global prefix, ValidationPipe, DomainExceptionFilter), driven with supertest. Covers register 201/400/400/409 and login 200/401/401, plus an end-to-end anti-enumeration check that unknown-email and wrong-password produce an identical 401 body.
+- Removed the orphaned scaffold test test/app.e2e-spec.ts, which asserted a GET / "Hello World!" endpoint this project never had.
+
+**Files affected**:
+- `test/jest-e2e.json` (rootDir + setupFiles guard)
+- `package.json` (test:e2e now runs --runInBand)
+- `test/api/auth/auth.e2e-spec.ts` (new, 8 tests)
+- `test/app.e2e-spec.ts` (deleted, orphaned scaffold)
+
+**Modifications made by the developer**:
+- First run failed with `(0, supertest_1.default) is not a function`. Claude diagnosed it as the ESM default-import style; changed `import request from 'supertest'` to `import * as request from 'supertest'`, which matches how Nest scaffolds its own E2E tests. Second run: 8/8 green.
+- Confirmed the full unit suite still passes (124 in 13 suites) and E2E passes separately (8 in 1 suite) via npm run test:e2e.
+
+**Lessons learned**:
+- Three distinct test levels now map cleanly onto the rubric's categories: unit (fakes, fast, `npm test`), integration (one adapter vs real Postgres, `npm run test:integration`), and E2E (whole app over HTTP vs real Postgres, `npm run test:e2e`). Keeping them in separate configs makes the distinction defensible.
+- E2E tests are destructive (they truncate tables), so they MUST inherit the same arrowmaze_test guard as the integration tests. Reusing jest-integration.setup.ts rather than writing a second guard keeps the safety invariant in one place.
+- supertest has no ESM default export under this TS config, so the star-import form is required. Nest's own scaffold uses the same form, which is a good sanity anchor when an import fails.
+- The anti-enumeration property is now verified at every level: unit (use case), and E2E (real HTTP round-trip). A security guarantee that holds end-to-end is far stronger evidence than a unit test alone.
 
 
 ## Critical evaluation (in progress)
