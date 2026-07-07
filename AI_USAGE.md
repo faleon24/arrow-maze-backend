@@ -426,6 +426,33 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - When an error message says "X is empty", the interesting question is not "how do I fill X" but "who is supposed to fill X, and did they run?". The fix flowed naturally once we understood that `JwtTokenService` didn't consume the env — the module did.
 
 
+## Entry 14
+
+**Date**: 2026-07-06
+**Tool**: Claude Opus 4.7 (via claude.ai)
+**Task**: Build the first REST controller (Block 11.1) — DTOs, AuthController, and unit tests for the authentication endpoints.
+
+**Prompt (paraphrased)**: With the application and infrastructure layers already wired through AppModule, and 108 unit tests plus 9 integration tests passing, I asked Claude to help me build the API layer for the two existing auth use cases. I wanted class-validator DTOs for the request bodies, a response DTO built from the AuthToken value object, a thin controller with no business logic, and hand-written fakes for the unit tests. The AuthController had to depend directly on the use case classes so Nest could resolve them from AppModule via the useFactory wiring already in place.
+
+**Result**: Claude produced three DTOs (RegisterUserDto, LoginDto, AuthTokenResponseDto), the AuthController with POST /auth/register (201) and POST /auth/login (200), and a test suite with hand-written fakes for both use cases. Claude also flagged upfront that the use cases currently throw generic Error objects instead of typed domain errors, and deferred that refactor to Block 11.2 where the global exception filter will map them to HTTP status codes.
+
+**Files affected**:
+- `src/api/auth/dto/register-user.dto.ts` (new)
+- `src/api/auth/dto/login.dto.ts` (new)
+- `src/api/auth/dto/auth-token-response.dto.ts` (new)
+- `src/api/auth/auth.controller.ts` (new)
+- `src/app.module.ts` (added AuthController to the controllers array)
+- `test/api/auth/auth.controller.spec.ts` (new, 8 tests)
+
+**Modifications made by the developer**:
+- Fixed a wiring bug that Claude's initial patch triggered: VS Code auto-import placed `AuthController` inside the `providers` array (not `controllers`) and added a spurious `import { App } from 'supertest/types'` line. The 404 responses from the smoke test made this obvious, and Claude walked me through the diagnosis by asking for the Nest startup logs (which had no `Mapped {/auth/register, POST}` line) and the output of `grep -A 2 "controllers:" src/app.module.ts` (which returned nothing).
+- Ran four smoke tests manually with curl: valid registration (201), validation failure (400 with three aggregated messages from class-validator), duplicate registration (500 — expected, will be mapped to 409 by the exception filter in Block 11.2), and valid login (200).
+
+**Lessons learned**:
+- Design decision that will pay off in the defence: transport-level validation (min length, email format) lives in the DTO with class-validator decorators, while business rules (email uniqueness, credential correctness) stay in the use case and domain layer. The `LoginDto` deliberately does NOT enforce a minimum password length — enforcing it there would lock out legitimate users whose passwords predate a policy change, and it would leak the current policy to attackers.
+- The controller is a pure transport-level adapter: three lines per endpoint (call use case, return DTO). No try/catch, no HTTP status mapping. That separation of concerns is exactly what Clean Architecture predicts and it's what makes the exception filter in Block 11.2 possible without touching the controller.
+- IDE auto-imports are the enemy of clean composition roots. A single misplaced `AuthController,` inside `providers` cost a compile-clean but functionally broken app. Always verify the shape of `@Module({...})` with grep after edits.
+- The default 500 response for uncaught domain errors leaks internal implementation details (Error message, stack trace in server logs). Block 11.2 will introduce typed domain errors and a global exception filter to map them to proper HTTP status codes (409 for duplicate email, 401 for invalid credentials).
 
 
 
