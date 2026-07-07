@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+
 // Injection tokens (application layer contract)
 import {
   USER_REPOSITORY,
@@ -27,6 +28,10 @@ import { BcryptPasswordHasher } from './infrastructure/security/bcrypt-password-
 import { JwtTokenService } from './infrastructure/security/jwt-token-service';
 import { SystemClock } from './infrastructure/system/system-clock';
 import { UuidGenerator } from './infrastructure/system/uuid-generator';
+// API layer — REST controllers
+import { AuthController } from './api/auth/auth.controller';
+
+
 
 /**
  * AppModule is the composition root of the application.
@@ -59,12 +64,18 @@ function parseExpiresIn(value: string): number {
   return amount * multipliers[unit];
 }
 
+
+
 @Module({
+
+  controllers: [AuthController],
+  
   providers: [
+
     // ------------------------------------------------------------------
     // Infrastructure: Prisma
     // ------------------------------------------------------------------
-    PrismaService,
+      PrismaService,
 
     // ------------------------------------------------------------------
     // Outbound port adapters — one per port, bound by its injection token
@@ -143,6 +154,7 @@ function parseExpiresIn(value: string): number {
     // or any feature module that reuses the use cases) can inject them.
     RegisterUserUseCase,
     LoginUseCase,
+    AppModule,
   ],
 })
 export class AppModule {}
