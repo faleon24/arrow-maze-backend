@@ -493,6 +493,42 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - A generic `@Catch()` filter intercepts Nest's own HttpExceptions too, so the filter must explicitly re-handle them (branch 2) or it would break the ValidationPipe's 400 responses. Confirmed with a smoke test that the 400 still carries the aggregated validation messages.
 - Asserting on error type instead of error message makes tests robust to wording changes — but the reverse is correct when the message itself is the observable behaviour (the anti-enumeration security test). Knowing which is which is the point of "test behaviour, not implementation".
 
+## Entry 16
+
+**Date**: 2026-07-06
+**Tool**: Claude Opus 4.7 (via claude.ai)
+**Task**: Add Swagger / OpenAPI documentation to the backend (Block 11.3), satisfying the API documentation requirement.
+
+**Prompt (paraphrased)**: With the auth endpoints and the global exception filter in place, I asked Claude to add Swagger documentation served at /api/docs. I wanted the OpenAPI schema to be generated from the same DTOs that already drive validation, rather than maintaining a separate spec, and I wanted the controller to document every HTTP status code the endpoints can return (including the ones produced by the exception filter).
+
+**Result**: Claude:
+- Installed @nestjs/swagger (v8, compatible with our NestJS 11).
+- Configured a DocumentBuilder in main.ts (title, description, version, bearer-auth scheme, auth tag) and served the UI at /api/docs, respecting the existing global 'api' prefix.
+- Added @ApiProperty to every field of RegisterUserDto, LoginDto and AuthTokenResponseDto, each with a description and a realistic example.
+- Annotated AuthController with @ApiTags, @ApiOperation and @ApiResponse so the docs list 201/400/409 for register and 200/400/401 for login, matching exactly what the DomainExceptionFilter produces.
+
+**Files affected**:
+- `package.json` / `package-lock.json` (added @nestjs/swagger)
+- `src/main.ts` (Swagger DocumentBuilder + setup)
+- `src/api/auth/dto/register-user.dto.ts` (@ApiProperty)
+- `src/api/auth/dto/login.dto.ts` (@ApiProperty)
+- `src/api/auth/dto/auth-token-response.dto.ts` (@ApiProperty)
+- `src/api/auth/auth.controller.ts` (@ApiTags / @ApiOperation / @ApiResponse)
+
+**Modifications made by the developer**:
+- Verified the /api/docs UI in the browser: both endpoints render with summaries, field-level descriptions and examples, documented status codes, and a working "Try it out" panel.
+- Ran the full suite to confirm the annotations are pure metadata and change no behaviour (124 unit tests still passing across 13 suites).
+- Noted 15 npm audit warnings introduced by transitive dependencies; deliberately did NOT run `npm audit fix --force` to avoid breaking-change upgrades this close to delivery. Flagged for a careful review at the end of the project.
+
+**Lessons learned**:
+- The DTO is the single source of truth for the HTTP contract: one class drives runtime validation (class-validator), compile-time typing, and the OpenAPI schema (@ApiProperty). The documented contract cannot drift from the enforced one because they come from the same decorators.
+- Documenting @ApiResponse status codes only makes sense because the exception filter guarantees them centrally. The docs describe 409/401 that no controller code explicitly throws — they come from the filter mapping domain errors. Documentation and the AOP aspect reinforce each other.
+- SwaggerModule.setup respects the global prefix, so the correct path is 'api/docs' (no leading slash) to land at /api/docs rather than /docs.
+
+
+
+
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
