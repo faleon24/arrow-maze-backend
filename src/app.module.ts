@@ -1,5 +1,7 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { GetUserByIdUseCase } from './application/usecases/auth/get-user-by-id.usecase';
+import { LoggingUseCaseDecorator } from './application/decorators/logging-use-case.decorator';
+
 
 // Injection tokens (application layer contract)
 import {
@@ -90,8 +92,15 @@ function parseExpiresIn(value: string): number {
     },
 
     {
-      provide: GetUserByIdUseCase,
-      useFactory: (users: IUserRepository) => new GetUserByIdUseCase(users),
+     provide: GetUserByIdUseCase,
+      useFactory: (users: IUserRepository) => {
+        const useCase = new GetUserByIdUseCase(users);
+        return new LoggingUseCaseDecorator(
+          useCase,
+          'GetUserByIdUseCase',
+          new Logger('UseCase'),
+        );
+      },
       inject: [USER_REPOSITORY],
     },
 
@@ -142,7 +151,20 @@ function parseExpiresIn(value: string): number {
         tokens: ITokenService,
         clock: IClock,
         ids: IIdGenerator,
-      ) => new RegisterUserUseCase(users, hasher, tokens, clock, ids),
+      ) => {
+        const useCase = new RegisterUserUseCase(
+          users,
+          hasher,
+          tokens,
+          clock,
+          ids,
+        );
+        return new LoggingUseCaseDecorator(
+          useCase,
+          'RegisterUserUseCase',
+          new Logger('UseCase'),
+        );
+      },
       inject: [
         USER_REPOSITORY,
         PASSWORD_HASHER,
@@ -157,7 +179,14 @@ function parseExpiresIn(value: string): number {
         users: IUserRepository,
         hasher: IPasswordHasher,
         tokens: ITokenService,
-      ) => new LoginUseCase(users, hasher, tokens),
+      ) => {
+        const useCase = new LoginUseCase(users, hasher, tokens);
+        return new LoggingUseCaseDecorator(
+          useCase,
+          'LoginUseCase',
+          new Logger('UseCase'),
+        );
+      },
       inject: [USER_REPOSITORY, PASSWORD_HASHER, TOKEN_SERVICE],
     },
   ],

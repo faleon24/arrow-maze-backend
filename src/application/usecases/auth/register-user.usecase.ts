@@ -7,7 +7,11 @@ import { ITokenService } from '../../ports/out/token-service.port';
 import { IClock } from '../../ports/out/clock.port';
 import { IIdGenerator } from '../../ports/out/id-generator.port';
 import { RegisterUserCommand } from './register-user.command';
-import { EmailAlreadyRegisteredError } from '../../../domain/errors';
+import { EmailAlreadyRegisteredError } from '../../../domain/errors';import { UseCase } from '../use-case';
+
+
+
+
 
 /**
  * RegisterUserUseCase — application service that orchestrates
@@ -32,7 +36,8 @@ import { EmailAlreadyRegisteredError } from '../../../domain/errors';
  *   - createdAt is taken from the injected clock, not the system clock
  *   - id is taken from the injected id generator, not a hardcoded lib
  */
-export class RegisterUserUseCase {
+export class RegisterUserUseCase implements UseCase<RegisterUserCommand, AuthToken> {
+  
   constructor(
     private readonly users: IUserRepository,
     private readonly hasher: IPasswordHasher,

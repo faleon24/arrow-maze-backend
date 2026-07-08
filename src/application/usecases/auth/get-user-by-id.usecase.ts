@@ -2,6 +2,7 @@ import { User } from '../../../domain/models/user';
 import { InvalidTokenError } from '../../../domain/errors';
 import { IUserRepository } from '../../ports/out/user-repository.port';
 import { GetUserByIdCommand } from './get-user-by-id.command';
+import { UseCase } from '../use-case';
 
 /**
  * GetUserByIdUseCase — application service that resolves the
@@ -16,7 +17,8 @@ import { GetUserByIdCommand } from './get-user-by-id.command';
  *
  * DIP: depends only on the IUserRepository abstraction.
  */
-export class GetUserByIdUseCase {
+export class GetUserByIdUseCase
+  implements UseCase<GetUserByIdCommand, User> {
   constructor(private readonly users: IUserRepository) {}
 
   async execute(command: GetUserByIdCommand): Promise<User> {

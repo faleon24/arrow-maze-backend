@@ -5,6 +5,7 @@ import { IPasswordHasher } from '../../ports/out/password-hasher.port';
 import { ITokenService } from '../../ports/out/token-service.port';
 import { LoginCommand } from './login.command';
 import { InvalidCredentialsError } from '../../../domain/errors';
+import { UseCase } from '../use-case';
 /**
  * LoginUseCase — application service that authenticates a user
  * and issues an auth token on success.
@@ -22,7 +23,7 @@ import { InvalidCredentialsError } from '../../../domain/errors';
  * DIP in action: depends on three interfaces, zero concrete
  * implementations.
  */
-export class LoginUseCase {
+export class LoginUseCase implements UseCase<LoginCommand, AuthToken> {
   constructor(
     private readonly users: IUserRepository,
     private readonly hasher: IPasswordHasher,
