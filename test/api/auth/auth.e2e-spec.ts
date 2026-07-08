@@ -189,4 +189,69 @@ describe('Auth endpoints (e2e)', () => {
       expect(unknownEmail.body.code).toBe(wrongPassword.body.code);
     });
   });
+
+  describe('GET /api/auth/me', () => {
+    /**
+     * Registers a fresh user and returns the issued token, so each
+     * /me test starts from a known authenticated identity.
+     */
+    async function registerAndGetToken(): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send(registerPayload);
+      return response.body.token as string;
+    }
+
+    it('should_return_200_with_the_user_profile_when_token_is_valid', async () => {
+      // Arrange
+      const token = await registerAndGetToken();
+
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${token}`);
+
+      // Assert
+      expect(response.status).toBe(200);
+      expect(response.body.email).toBe(registerPayload.email);
+      expect(response.body.displayName).toBe(registerPayload.displayName);
+      expect(typeof response.body.id).toBe('string');
+      expect(typeof response.body.createdAt).toBe('string');
+    });
+
+    it('should_never_expose_the_password_hash_in_the_profile', async () => {
+      // Arrange
+      const token = await registerAndGetToken();
+
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${token}`);
+
+      // Assert — the response must not carry the hash under any key.
+      expect(response.status).toBe(200);
+      expect(response.body.passwordHash).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toContain('$2b$');
+    });
+
+    it('should_return_401_when_the_authorization_header_is_missing', async () => {
+      // Act
+      const response = await request(app.getHttpServer()).get('/api/auth/me');
+
+      // Assert
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe('INVALID_TOKEN');
+    });
+
+    it('should_return_401_when_the_token_is_malformed', async () => {
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer not.a.real.token');
+
+      // Assert
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe('INVALID_TOKEN');
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-
+import { GetUserByIdUseCase } from './application/usecases/auth/get-user-by-id.usecase';
 
 // Injection tokens (application layer contract)
 import {
@@ -30,7 +30,7 @@ import { SystemClock } from './infrastructure/system/system-clock';
 import { UuidGenerator } from './infrastructure/system/uuid-generator';
 // API layer — REST controllers
 import { AuthController } from './api/auth/auth.controller';
-
+import { JwtAuthGuard } from './api/guards/jwt-auth.guard';
 
 
 /**
@@ -88,6 +88,19 @@ function parseExpiresIn(value: string): number {
       provide: PASSWORD_HASHER,
       useClass: BcryptPasswordHasher,
     },
+
+    {
+      provide: GetUserByIdUseCase,
+      useFactory: (users: IUserRepository) => new GetUserByIdUseCase(users),
+      inject: [USER_REPOSITORY],
+    },
+
+    // ------------------------------------------------------------------
+    // API layer — guards (the JWT authentication aspect)
+    // ------------------------------------------------------------------
+    JwtAuthGuard,
+
+
    {
   provide: TOKEN_SERVICE,
   useFactory: () => {
@@ -99,7 +112,6 @@ function parseExpiresIn(value: string): number {
         'JWT_SECRET is not defined. Check that .env is loaded before AppModule instantiates providers.',
       );
     }
-
     // JWT_EXPIRES_IN in the .env is a human-friendly string like "7d".
     // JwtTokenService expects a number of seconds. Convert here so the
     // adapter stays a dumb, deterministic value receiver.
@@ -150,11 +162,9 @@ function parseExpiresIn(value: string): number {
     },
   ],
   exports: [
-    // Exported so future modules (e.g. the auth controller module,
-    // or any feature module that reuses the use cases) can inject them.
     RegisterUserUseCase,
     LoginUseCase,
-    AppModule,
+    GetUserByIdUseCase,
   ],
 })
 export class AppModule {}

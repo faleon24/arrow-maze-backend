@@ -1,12 +1,30 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Request } from 'express';
 
+import { GetUserByIdUseCase } from '../../application/usecases/auth/get-user-by-id.usecase';
 import { LoginUseCase } from '../../application/usecases/auth/login.usecase';
 import { RegisterUserUseCase } from '../../application/usecases/auth/register-user.usecase';
 
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { AuthTokenResponseDto } from './dto/auth-token-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterUserDto } from './dto/register-user.dto';
+import { UserResponseDto } from './dto/user-response.dto';
 
 /**
  * AuthController — HTTP entry point for authentication endpoints.
@@ -18,9 +36,9 @@ import { RegisterUserDto } from './dto/register-user.dto';
  *   4. Map the domain result to the response DTO.
  *
  * No business logic, no try/catch. Error mapping to HTTP status
- * codes lives in the global DomainExceptionFilter, which keeps
- * this controller a pure transport-level adapter. The @ApiResponse
- * decorators document the status codes that filter can produce.
+ * codes lives in the global DomainExceptionFilter. Authentication
+ * on protected routes is handled by the JwtAuthGuard aspect, not
+ * by code inside the handlers.
  */
 @ApiTags('auth')
 @Controller('auth')
@@ -28,6 +46,7 @@ export class AuthController {
   constructor(
     private readonly registerUser: RegisterUserUseCase,
     private readonly login: LoginUseCase,
+    private readonly getUserById: GetUserByIdUseCase,
   ) {}
 
   @Post('register')
@@ -88,5 +107,31 @@ export class AuthController {
       password: dto.password,
     });
     return AuthTokenResponseDto.from(token);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get the currently authenticated user',
+    description:
+      'Returns the profile of the user identified by the Bearer ' +
+      'token. Requires a valid Authorization header.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Authenticated user profile.',
+    type: UserResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Missing, malformed, or expired token.',
+  })
+  async me(@Req() request: Request): Promise<UserResponseDto> {
+    // The JwtAuthGuard has already verified the token and attached
+    // the userId. The controller trusts that invariant.
+    const userId = (request as Request & { userId: string }).userId;
+    const user = await this.getUserById.execute({ userId });
+    return UserResponseDto.from(user);
   }
 }

@@ -7,6 +7,11 @@ import { LoginUseCase } from '../../../src/application/usecases/auth/login.useca
 import { RegisterUserCommand } from '../../../src/application/usecases/auth/register-user.command';
 import { RegisterUserDto } from '../../../src/api/auth/dto/register-user.dto';
 import { RegisterUserUseCase } from '../../../src/application/usecases/auth/register-user.usecase';
+import { GetUserByIdUseCase } from '../../../src/application/usecases/auth/get-user-by-id.usecase';
+import { User } from '../../../src/domain/models/user';
+import { Email } from '../../../src/domain/models/email';
+import { PasswordHash } from '../../../src/domain/models/password-hash';
+
 
 /**
  * Hand-written fake for RegisterUserUseCase.
@@ -56,6 +61,33 @@ class FakeLoginUseCase {
   }
 }
 
+/**
+ * Hand-written fake for GetUserByIdUseCase. Returns a preset User
+ * (or throws) so the controller's /me handler can be tested in
+ * isolation. The register/login tests do not exercise /me, but the
+ * controller constructor now requires this dependency, so every
+ * test supplies the fake.
+ */
+class FakeGetUserByIdUseCase {
+  userToReturn: User = new User({
+    id: 'fake-user-id',
+    email: new Email('me@example.com'),
+    passwordHash: new PasswordHash(
+      '$2b$04$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQR',
+    ),
+    displayName: 'Fake User',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  });
+  errorToThrow: Error | null = null;
+
+  async execute(): Promise<User> {
+    if (this.errorToThrow !== null) {
+      throw this.errorToThrow;
+    }
+    return this.userToReturn;
+  }
+}
+
 function buildValidRegisterDto(): RegisterUserDto {
   const dto = new RegisterUserDto();
   dto.email = 'alice@example.com';
@@ -77,9 +109,11 @@ describe('AuthController', () => {
       // Arrange
       const registerUseCase = new FakeRegisterUserUseCase();
       const loginUseCase = new FakeLoginUseCase();
+      const getUserByIdUseCase = new FakeGetUserByIdUseCase();
       const controller = new AuthController(
         registerUseCase as unknown as RegisterUserUseCase,
         loginUseCase as unknown as LoginUseCase,
+        getUserByIdUseCase as unknown as GetUserByIdUseCase,
       );
       const dto = buildValidRegisterDto();
 
@@ -102,9 +136,11 @@ describe('AuthController', () => {
         new Date('2030-01-15T10:00:00.000Z'),
       );
       const loginUseCase = new FakeLoginUseCase();
+      const getUserByIdUseCase = new FakeGetUserByIdUseCase();
       const controller = new AuthController(
         registerUseCase as unknown as RegisterUserUseCase,
         loginUseCase as unknown as LoginUseCase,
+        getUserByIdUseCase as unknown as GetUserByIdUseCase,
       );
 
       // Act
@@ -123,9 +159,11 @@ describe('AuthController', () => {
         'An account with this email already exists',
       );
       const loginUseCase = new FakeLoginUseCase();
+      const getUserByIdUseCase = new FakeGetUserByIdUseCase();
       const controller = new AuthController(
         registerUseCase as unknown as RegisterUserUseCase,
         loginUseCase as unknown as LoginUseCase,
+        getUserByIdUseCase as unknown as GetUserByIdUseCase,
       );
 
       // Act
@@ -141,9 +179,11 @@ describe('AuthController', () => {
       // Arrange
       const registerUseCase = new FakeRegisterUserUseCase();
       const loginUseCase = new FakeLoginUseCase();
+      const getUserByIdUseCase = new FakeGetUserByIdUseCase();
       const controller = new AuthController(
         registerUseCase as unknown as RegisterUserUseCase,
         loginUseCase as unknown as LoginUseCase,
+        getUserByIdUseCase as unknown as GetUserByIdUseCase,
       );
 
       // Act
@@ -159,9 +199,11 @@ describe('AuthController', () => {
       // Arrange
       const registerUseCase = new FakeRegisterUserUseCase();
       const loginUseCase = new FakeLoginUseCase();
+      const getUserByIdUseCase = new FakeGetUserByIdUseCase();
       const controller = new AuthController(
         registerUseCase as unknown as RegisterUserUseCase,
         loginUseCase as unknown as LoginUseCase,
+        getUserByIdUseCase as unknown as GetUserByIdUseCase,
       );
       const dto = buildValidLoginDto();
 
@@ -179,6 +221,7 @@ describe('AuthController', () => {
       // Arrange
       const registerUseCase = new FakeRegisterUserUseCase();
       const loginUseCase = new FakeLoginUseCase();
+      const getUserByIdUseCase = new FakeGetUserByIdUseCase();
       loginUseCase.tokenToReturn = new AuthToken(
         'session-token-xyz',
         new Date('2030-06-01T00:00:00.000Z'),
@@ -186,6 +229,7 @@ describe('AuthController', () => {
       const controller = new AuthController(
         registerUseCase as unknown as RegisterUserUseCase,
         loginUseCase as unknown as LoginUseCase,
+        getUserByIdUseCase as unknown as GetUserByIdUseCase,
       );
 
       // Act
@@ -201,10 +245,12 @@ describe('AuthController', () => {
       // Arrange
       const registerUseCase = new FakeRegisterUserUseCase();
       const loginUseCase = new FakeLoginUseCase();
+      const getUserByIdUseCase = new FakeGetUserByIdUseCase();
       loginUseCase.errorToThrow = new Error('Invalid credentials');
       const controller = new AuthController(
         registerUseCase as unknown as RegisterUserUseCase,
         loginUseCase as unknown as LoginUseCase,
+        getUserByIdUseCase as unknown as GetUserByIdUseCase,
       );
 
       // Act
@@ -218,9 +264,11 @@ describe('AuthController', () => {
       // Arrange
       const registerUseCase = new FakeRegisterUserUseCase();
       const loginUseCase = new FakeLoginUseCase();
+      const getUserByIdUseCase = new FakeGetUserByIdUseCase();
       const controller = new AuthController(
         registerUseCase as unknown as RegisterUserUseCase,
         loginUseCase as unknown as LoginUseCase,
+        getUserByIdUseCase as unknown as GetUserByIdUseCase,
       );
 
       // Act
