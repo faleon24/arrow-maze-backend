@@ -586,6 +586,46 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - Typing test fakes that return RxJS streams: use `Observable<unknown>` for the CallHandler stub, not `ReturnType<typeof of>`. The latter does not generalise across of()/throwError() and breaks compilation.
 - Interceptors that log errors must re-throw (RxJS `tap`'s error callback observes without consuming), so the exception filter still produces the HTTP response. The test asserts the error propagates.
 
+## Entry 19 — JWT auth guard + GET /auth/me (AOP aspect #3)
+
+**Date**: 2026-07-08
+**Tool**: Claude Opus 4.7 (via claude.ai)
+**Task**: Add the third AOP aspect — a JWT authentication guard — justified by a real protected endpoint, GET /auth/me. This completes the 3 aspects the rubric rewards with full marks.
+
+**Prompt (paraphrased)**: With the exception filter and logging interceptor already in place as aspects #1 and #2, I asked Claude to add a JWT authentication guard as aspect #3, but applied to a genuinely protected endpoint rather than in a vacuum. We chose GET /auth/me (returns the authenticated user's profile) so the guard has something real to protect. The guard had to keep all token logic out of the controller: the handler should simply trust that if it runs, the caller is authenticated.
+
+**Result**: Claude produced:
+- InvalidTokenError (domain error, code INVALID_TOKEN), added to the barrel and mapped to 401 in the exception filter's status Map (one-line OCP extension).
+- GetUserByIdUseCase + command (application layer), which loads the user and throws InvalidTokenError if the id no longer exists.
+- JwtAuthGuard (src/api/guards): extracts the Bearer token, verifies it via the existing ITokenService.verify port, attaches userId to the request, and throws InvalidTokenError on any failure (missing header, wrong scheme, bad/expired token) without distinguishing the cause.
+- UserResponseDto: serializes only id, email, displayName, createdAt — the password hash is deliberately never exposed.
+- GET /auth/me on AuthController, protected with @UseGuards(JwtAuthGuard); the handler just reads request.userId and delegates. Registered GetUserByIdUseCase (factory) and JwtAuthGuard (provider) in AppModule, and cleaned up a stray self-referential AppModule export.
+- 5 unit tests for the guard and 4 E2E tests for /me (valid token 200, hash never exposed, missing header 401, malformed token 401).
+
+**Files affected**:
+- `src/domain/errors/invalid-token.error.ts` (new) + `index.ts` (barrel)
+- `src/api/filters/domain-exception.filter.ts` (map InvalidTokenError -> 401)
+- `src/application/usecases/auth/get-user-by-id.command.ts` (new)
+- `src/application/usecases/auth/get-user-by-id.usecase.ts` (new)
+- `src/api/guards/jwt-auth.guard.ts` (new)
+- `src/api/auth/dto/user-response.dto.ts` (new)
+- `src/api/auth/auth.controller.ts` (GET /auth/me)
+- `src/app.module.ts` (register use case + guard, clean exports)
+- `test/api/guards/jwt-auth.guard.spec.ts` (new, 5 tests)
+- `test/api/auth/auth.controller.spec.ts` (updated for the 3-arg constructor)
+- `test/api/auth/auth.e2e-spec.ts` (4 new /me E2E tests)
+
+**Modifications made by the developer**:
+- After wiring the guard, the full unit suite dropped a suite: auth.controller.spec.ts failed to compile with TS2554 "Expected 3 arguments, but got 2" because adding GetUserByIdUseCase to the controller constructor broke the three places the controller-spec instantiated it with only two fakes. Fixed by adding a FakeGetUserByIdUseCase and updating all three constructions (and the fake instantiations) via editor Replace-All.
+- Smoke-tested the full flow with curl: register/login -> copy token -> GET /me with Bearer returns 200 with the profile and NO password hash; no header -> 401 INVALID_TOKEN; garbage token -> 401. Learned in passing that JWTs are fragile to hand-copying from the terminal (a mis-copied token reads as invalid), so used a shell variable (TOKEN=$(...)) to pipe the real token through.
+- Final suite counts: 133 unit (15 suites), 9 integration, 12 E2E.
+
+**Lessons learned**:
+- Three AOP aspects now cover three distinct cross-cutting concerns, each with a clean SOLID justification: the filter (error mapping, OCP via a status Map), the interceptor (tracing, security-by-omission of the body), and the guard (authentication, DIP on ITokenService). None of them lives inside a use case or leaks into the controller handlers — GET /auth/me is three trivial lines because the guard already did the work.
+- Adding a constructor dependency is a breaking change to every test that news-up the class by hand. Hand-written fakes trade a bit of this maintenance for clarity; the fix is mechanical but must touch every construction site. Worth remembering before changing a widely-instantiated constructor.
+- The password hash is excluded at the DTO boundary (UserResponseDto.from), not by hoping callers do not ask for it. The E2E test asserts the bcrypt prefix "$2b$" appears nowhere in the response body, which is a robust guard against a future regression that adds the field under any key.
+- Reusing the already-present ITokenService.verify (added in an earlier session) meant aspect #3 needed no changes to the domain or the token adapter — a payoff from having defined the port with both issue and verify from the start.
+
 
 ## Critical evaluation (in progress)
 
