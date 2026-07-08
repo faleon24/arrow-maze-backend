@@ -658,6 +658,39 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - git mv preserves file history (shows as a rename, not delete+add), which keeps the individual-contribution trail intact for the rubric's commit-history review.
 - Studying a well-graded reference project is a legitimate way to sharpen architectural judgement, as long as the patterns (not the code) are adapted; noted the reference in this entry for transparency.
 
+## Entry 21 — Logging as a GoF Decorator over use cases
+
+**Date**: 2026-07-08
+**Tool**: Claude Opus 4.7 (via claude.ai)
+**Task**: Add a logging aspect implemented as a classic GoF Decorator wrapping the use cases, complementing the existing Nest interceptor and covering the structural-pattern category of the rubric.
+
+**Prompt (paraphrased)**: After studying the DeltaTeam-UCAB/gymnastic-center-backend reference project — which wraps its application services in decorators rather than relying on framework interceptors — I asked Claude to implement the same idea on my use cases: a LoggingUseCaseDecorator that shares the use case interface, wraps a real use case, logs entry/exit/duration around execute(), and is wired in the composition root. The goal was to satisfy two rubric criteria at once: the GoF Decorator pattern (structural) and an AOP cross-cutting concern implemented with plain SOLID, no AOP library.
+
+**Result**: Claude produced:
+- A shared UseCase<TCommand, TResult> interface (src/application/usecases/use-case.ts); RegisterUserUseCase, LoginUseCase and GetUserByIdUseCase now implement it (no behaviour change).
+- LoggingUseCaseDecorator<TCommand, TResult> (src/application/decorators): implements the same UseCase interface, wraps an inner use case, logs "--> name" on entry and "<-- name OK/FAILED elapsedMs" on exit, and re-throws on failure so the contract is preserved. It depends on a small UseCaseLogger interface (not Nest's Logger) to keep the application layer framework-free.
+- Wired all three use cases in AppModule so each factory returns the use case wrapped in the decorator, using Nest's Logger (which satisfies UseCaseLogger) supplied at the composition root.
+- 6 unit tests for the decorator (result unchanged, command forwarded, entry/exit logged, error re-thrown, error type logged, command contents never logged).
+
+**Files affected**:
+- `src/application/usecases/use-case.ts` (new interface)
+- `src/application/usecases/auth/register-user.usecase.ts` (implements UseCase)
+- `src/application/usecases/auth/login.usecase.ts` (implements UseCase)
+- `src/application/usecases/auth/get-user-by-id.usecase.ts` (implements UseCase)
+- `src/application/decorators/logging-use-case.decorator.ts` (new)
+- `src/app.module.ts` (wrap each use case in the decorator)
+- `test/application/decorators/logging-use-case.decorator.spec.ts` (new, 6 tests)
+
+**Modifications made by the developer**:
+- Verified at runtime that both logging aspects now operate in layers for one request: the Nest interceptor logs the HTTP round-trip while the decorator logs the use case execution nested inside it (interceptor 7ms total, decorator 5ms for the use case alone), with the InvalidCredentialsError travelling through both to the exception filter.
+- Confirmed all suites pass: 139 unit (16 suites), 9 integration, 12 e2e.
+- Studied the reference repo for the pattern (wrapping application services in decorators), then implemented it independently on my own use cases and interface; noted here for transparency.
+
+**Lessons learned**:
+- The Decorator hits two rubric criteria with one artefact: it is the GoF structural pattern that was previously under-covered, and it is an AOP aspect built with plain SOLID (no library), which is exactly what the brief asks for.
+- Decorator vs Nest interceptor is a clean talking point: the interceptor is framework AOP at the HTTP boundary; the decorator is hand-rolled AOP at the application boundary, portable to a CLI or worker with no controller. They stack, and the nested timings prove they observe different layers.
+- LSP is what makes the wiring type-check without touching the controller: because the decorator implements the same UseCase interface, Nest can hand the controller a decorated instance under the same class token and the controller cannot tell the difference.
+- Keeping the decorator's logger dependency as a small UseCaseLogger interface (instead of importing Nest's Logger) preserves the application layer's freedom from framework imports — the concrete Nest Logger is injected only at the composition root.
 
 
 ## Critical evaluation (in progress)
