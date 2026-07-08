@@ -627,6 +627,39 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - Reusing the already-present ITokenService.verify (added in an earlier session) meant aspect #3 needed no changes to the domain or the token adapter — a payoff from having defined the port with both issue and verify from the start.
 
 
+
+## Entry 20 — Move AuthToken out of the domain layer into application
+
+**Date**: 2026-07-08
+**Tool**: Claude Opus 4.7 (via claude.ai)
+**Task**: Relocate the AuthToken value object from the domain layer to the application layer, after peer feedback (and a reference project) pointed out that a token is not a business rule of the game domain.
+
+**Prompt (paraphrased)**: A friend whose team scored well last semester reviewed the design and argued that auth tokens do not belong in the domain — his own project keeps auth under an infrastructure/auth folder, not in the domain. I asked Claude to evaluate this and move AuthToken to the most correct layer without breaking the 133 unit / 9 integration / 12 e2e tests.
+
+**Result**: Claude analysed the dependency direction before moving anything. Moving AuthToken to infrastructure would have been wrong: the ITokenService port and the register/login use cases (both in the application layer) reference AuthToken, and the dependency rule forbids the application layer from importing infrastructure. The correct home is the application layer itself: infrastructure (JwtTokenService) and api (AuthTokenResponseDto) may depend inward on it, while the port and use cases sit in the same layer. Claude moved src/domain/models/auth-token.ts to src/application/models/auth-token.ts (and its spec) with git mv to preserve history, then updated all 11 imports across code and tests, each with its correct relative depth.
+
+**Files affected**:
+- `src/application/models/auth-token.ts` (moved from src/domain/models/)
+- `test/application/models/auth-token.spec.ts` (moved from test/domain/models/)
+- `src/application/ports/out/token-service.port.ts` (import)
+- `src/application/usecases/auth/register-user.usecase.ts` (import)
+- `src/application/usecases/auth/login.usecase.ts` (import)
+- `src/infrastructure/security/jwt-token-service.ts` (import)
+- `src/api/auth/dto/auth-token-response.dto.ts` (import)
+- 5 test files (imports updated)
+
+**Modifications made by the developer**:
+- First git mv of the spec failed because the destination folder test/application/models did not exist yet; created it with mkdir and re-ran the git mv successfully.
+- After fixing the 11 imports, verified all three test levels still pass with zero behaviour change: 133 unit (15 suites), 9 integration, 12 e2e. Reviewed the DeltaTeam-UCAB/gymnastic-center-backend repository as an architectural reference for where auth concerns belong (their auth lives under infraestructure/auth), which prompted this refactor.
+
+**Lessons learned**:
+- "Move it out of the domain" is correct, but "move it to infrastructure" would have been a worse violation than the original. The dependency rule decides the target layer: since the application-layer port and use cases reference AuthToken, it belongs in application, where inner-to-outer dependencies stay legal. The infrastructure detail is HOW the token is signed (JWT, in JwtTokenService), not the concept of "a token with an expiry".
+- A token is not a business rule of the game domain (players, boards, levels, scores are). Keeping the domain limited to genuine business concepts makes the layering defensible under questioning.
+- git mv preserves file history (shows as a rename, not delete+add), which keeps the individual-contribution trail intact for the rubric's commit-history review.
+- Studying a well-graded reference project is a legitimate way to sharpen architectural judgement, as long as the patterns (not the code) are adapted; noted the reference in this entry for transparency.
+
+
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
