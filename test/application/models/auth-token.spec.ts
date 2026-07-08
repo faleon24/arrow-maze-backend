@@ -1,4 +1,4 @@
-import { AuthToken } from '../../../src/domain/models/auth-token';
+import { AuthToken } from '../../../src/application/models/auth-token';
 
 describe('AuthToken', () => {
   const validValue = 'jwt.header.payload.signature';

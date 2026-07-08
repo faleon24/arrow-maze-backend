@@ -1,6 +1,6 @@
 import * as jwt from 'jsonwebtoken';
 import { ITokenService } from '../../application/ports/out/token-service.port';
-import { AuthToken } from '../../domain/models/auth-token';
+import { AuthToken } from '../../application/models/auth-token';
 
 /**
  * JwtTokenService — infrastructure adapter for ITokenService.

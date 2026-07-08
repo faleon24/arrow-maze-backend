@@ -1,5 +1,5 @@
 import { Email } from '../../../domain/models/email';
-import { AuthToken } from '../../../domain/models/auth-token';
+import { AuthToken } from '../../models/auth-token';
 import { IUserRepository } from '../../ports/out/user-repository.port';
 import { IPasswordHasher } from '../../ports/out/password-hasher.port';
 import { ITokenService } from '../../ports/out/token-service.port';

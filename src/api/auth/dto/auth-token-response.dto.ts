@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { AuthToken } from '../../../domain/models/auth-token';
+import { AuthToken } from '../../../application/models/auth-token';
 
 /**
  * AuthTokenResponseDto — HTTP response body for successful

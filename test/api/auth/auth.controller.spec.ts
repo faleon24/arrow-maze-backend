@@ -1,4 +1,4 @@
-import { AuthToken } from '../../../src/domain/models/auth-token';
+import { AuthToken } from '../../../src/application/models/auth-token';
 import { AuthController } from '../../../src/api/auth/auth.controller';
 import { AuthTokenResponseDto } from '../../../src/api/auth/dto/auth-token-response.dto';
 import { LoginDto } from '../../../src/api/auth/dto/login.dto';

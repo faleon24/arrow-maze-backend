@@ -3,7 +3,7 @@ import { ExecutionContext } from '@nestjs/common';
 import { JwtAuthGuard } from '../../../src/api/guards/jwt-auth.guard';
 import { InvalidTokenError } from '../../../src/domain/errors/invalid-token.error';
 import { ITokenService } from '../../../src/application/ports/out/token-service.port';
-import { AuthToken } from '../../../src/domain/models/auth-token';
+import { AuthToken } from '../../../src/application/models/auth-token';
 
 /**
  * Hand-written fake for ITokenService. Records the token it was

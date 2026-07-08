@@ -1,5 +1,4 @@
-import { AuthToken } from '../../../domain/models/auth-token';
-
+import { AuthToken } from '../../models/auth-token';
 /**
  * TokenService outbound port.
  *

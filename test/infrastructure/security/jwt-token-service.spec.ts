@@ -1,5 +1,5 @@
 import { JwtTokenService } from '../../../src/infrastructure/security/jwt-token-service';
-import { AuthToken } from '../../../src/domain/models/auth-token';
+import { AuthToken } from '../../../src/application/models/auth-token';
 
 describe('JwtTokenService', () => {
   const TEST_SECRET = 'a_test_secret_that_is_long_enough_to_be_reasonable';

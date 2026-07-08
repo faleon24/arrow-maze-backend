@@ -3,7 +3,7 @@ import { LoginCommand } from '../../../../src/application/usecases/auth/login.co
 import { User } from '../../../../src/domain/models/user';
 import { Email } from '../../../../src/domain/models/email';
 import { PasswordHash } from '../../../../src/domain/models/password-hash';
-import { AuthToken } from '../../../../src/domain/models/auth-token';
+import { AuthToken } from '../../../../src/application/models/auth-token';
 import { IUserRepository } from '../../../../src/application/ports/out/user-repository.port';
 import { IPasswordHasher } from '../../../../src/application/ports/out/password-hasher.port';
 import { ITokenService } from '../../../../src/application/ports/out/token-service.port';
