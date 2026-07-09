@@ -12,3 +12,4 @@ export const PASSWORD_HASHER = Symbol('IPasswordHasher');
 export const TOKEN_SERVICE = Symbol('ITokenService');
 export const CLOCK = Symbol('IClock');
 export const ID_GENERATOR = Symbol('IIdGenerator');
+export const LEVEL_REPOSITORY = Symbol('ILevelRepository');
