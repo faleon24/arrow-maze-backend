@@ -733,6 +733,45 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - Verifying against reality beats assuming: reading the actual Jest summary, the git status, and the curl output — instead of trusting a remembered count — caught the misplaced spec and the fixture collision before they were committed.
 
 
+
+## Entry 23 — Player progress vertical slice with protected endpoints
+
+**Date**: 2026-07-09
+**Tool**: Claude Opus 4.8 (via claude.ai)
+**Task**: Build the progress feature — the last backend piece a playable game needs — as a full vertical slice across all four layers. With auth, levels, and now progress, the backend covers everything the Flutter client needs for a functional MVP, freeing the remaining time for the game itself (the highest-risk criterion).
+
+**Prompt (paraphrased)**: I asked Claude to keep doing whatever was most optimal toward finishing the whole project, not just starting the front end. Claude's strategic read: the only high-risk criterion is the Flutter game (heaviest, unfamiliar, with a learning curve), so the goal was to finish the minimum backend a playable game needs and get to Flutter with margin. That minimum was progress. We built the minimal-playable version (SubmitScore + GetProgress) rather than the UML's full SyncProgress/merge policy, keeping surface small. Faithful to the UML: a PlayerProgress aggregate holding LevelProgressEntry items, where the "best score wins, attempt counted" rule lives in the aggregate (using Score.compareTo), two use cases, a Postgres adapter whose (userId, levelId) unique constraint makes saving idempotent, and two JWT-protected endpoints where identity comes from the token, never the body.
+
+**Result**: Claude produced:
+- Domain: LevelProgressEntry (value object; withNewAttempt keeps the better score, counts the attempt, preserves the first-completion date) and PlayerProgress (aggregate root; record() applies the best-score rule, bestFor() looks up a level). Reuses the Score value object from Entry 22.
+- Application: IProgressRepository port (findByUser returns an empty aggregate, never null; save), PROGRESS_REPOSITORY token, SubmitScore + GetProgress commands and use cases. SubmitScore stamps completion time from the IClock port, not the client, so a run cannot be backdated.
+- Infrastructure: ProgressMapper (maps one entry per row, since a PlayerProgress spans many rows; score stored as flat columns for future leaderboard ordering) and PostgresProgressRepository (upserts each entry keyed by the unique constraint; preserves each row's id on update).
+- API: SubmitScoreDto (class-validator bounds: stars 0-3, non-negative, so bad input dies as a 400 before the use case), ProgressResponseDto (constructor-private + static from), ProgressController (class-level @UseGuards(JwtAuthGuard); reads request.userId set by the guard; GET and POST /me/progress).
+- Persistence: ProgressEntry Prisma model with @@unique([userId, levelId]), one migration applied to dev and test DBs.
+- Tests: 24 new unit (LevelProgressEntry, PlayerProgress, both use cases with hand-written fakes and a fixed clock), 5 integration against real Postgres (including idempotency: saving the same level twice updates, never duplicates), 7 e2e over HTTP with real auth (including best-score-kept across submissions and progress scoped to the authenticated user). Totals after the slice: 216 unit (27 suites), 22 integration, 25 e2e. A curl to GET /api/me/progress without a token returned 401, confirming the guard protects the route.
+
+**Files affected**:
+- `src/domain/models/level-progress-entry.ts`, `player-progress.ts` (new)
+- `src/application/ports/out/progress-repository.port.ts` (new), `src/application/ports/tokens.ts` (PROGRESS_REPOSITORY)
+- `src/application/usecases/progress/submit-score.command.ts`, `submit-score.usecase.ts`, `get-progress.command.ts`, `get-progress.usecase.ts` (new)
+- `src/infrastructure/persistence/progress.mapper.ts`, `postgres-progress.repository.ts` (new)
+- `src/api/progress/dto/submit-score.dto.ts`, `progress-response.dto.ts`, `src/api/progress/progress.controller.ts` (new)
+- `src/app.module.ts` (wire the controller, the progress adapter via useFactory, and both use cases)
+- `prisma/schema.prisma` (ProgressEntry model), `prisma/migrations/*` (one migration)
+- `test/domain/models/level-progress-entry.spec.ts`, `player-progress.spec.ts` (new), `test/application/usecases/progress/*.spec.ts` (new), `test/infrastructure/persistence/postgres-progress.repository.integration-spec.ts` (new), `test/api/progress/progress.e2e-spec.ts` (new), `test/infrastructure/helpers/database-cleaner.ts` (truncate progress_entries too)
+
+**Modifications made by the developer**:
+- Chose the minimal-playable scope over the full UML merge policy, and gave Claude design freedom toward finishing the whole project.
+- Applied every edit, ran the migration on both dev and test DBs, and verified the protected route returns 401 without a token via curl.
+- Noticed the new integration spec was named "postgress-progress" (double s) while the others were "postgres-", and had it renamed for a consistent test tree — spotted by asking why its file icon differed from the other specs.
+- Read the Jest summaries to confirm counts rather than trust claimed numbers (Claude miscounted one unit total during the block; the real Jest output settled it).
+
+**Lessons learned**:
+- The business rule is what makes this more than CRUD: "best score wins" lives in the aggregate (PlayerProgress.record / LevelProgressEntry.withNewAttempt via Score.compareTo), not in the controller or SQL, and is proven at three levels — domain unit test, use-case test, and an HTTP e2e that submits a worse run and sees the better score survive.
+- Security by construction: the userId is taken from the verified JWT (attached by the guard), never from the request body, and completion time comes from the server's IClock. An e2e with two distinct users proves each sees only their own progress; a curl proves the route rejects unauthenticated callers.
+- The composition root broke twice while wiring, and each time Nest's error named the exact cause: first a provider (LEVEL_REPOSITORY) was accidentally replaced instead of appended, then the two progress use-case providers were missing. Reading the "can't resolve dependencies of X" message and confirming with grep — instead of guessing at a malformed block — found each fix quickly. A wrong early hypothesis (a broken brace) was discarded once the actual providers array was inspected.
+- Idempotency belongs in the schema, not just the code: the @@unique([userId, levelId]) constraint is what guarantees a replayed submission updates one row rather than duplicating it, and the integration test proves it against a real database.
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
