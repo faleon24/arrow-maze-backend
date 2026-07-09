@@ -19,3 +19,17 @@ model User {
 
   @@map("users")
 }
+
+model Level {
+  id         String   @id
+  index      Int      @unique
+  difficulty String
+  rows       Int
+  cols       Int
+  cells      Json
+  parTimeMs  Int
+  published  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@map("levels")
+}
