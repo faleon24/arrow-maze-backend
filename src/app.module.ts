@@ -10,11 +10,13 @@ import {
   TOKEN_SERVICE,
   CLOCK,
   ID_GENERATOR,
+  LEVEL_REPOSITORY,
 } from './application/ports/tokens';
 
 // Application layer — use cases (framework-agnostic)
 import { RegisterUserUseCase } from './application/usecases/auth/register-user.usecase';
 import { LoginUseCase } from './application/usecases/auth/login.usecase';
+import { ListLevelsUseCase } from './application/usecases/levels/list-levels.usecase';
 
 // Application layer — port interfaces (only for typing the factory params)
 import { IUserRepository } from './application/ports/out/user-repository.port';
@@ -22,16 +24,19 @@ import { IPasswordHasher } from './application/ports/out/password-hasher.port';
 import { ITokenService } from './application/ports/out/token-service.port';
 import { IClock } from './application/ports/out/clock.port';
 import { IIdGenerator } from './application/ports/out/id-generator.port';
+import { ILevelRepository } from './application/ports/out/level-repository.port';
 
 // Infrastructure layer — concrete adapters
 import { PrismaService } from './infrastructure/persistence/prisma.service';
 import { PostgresUserRepository } from './infrastructure/persistence/postgres-user.repository';
+import { PostgresLevelRepository } from './infrastructure/persistence/postgres-level.repository';
 import { BcryptPasswordHasher } from './infrastructure/security/bcrypt-password-hasher';
 import { JwtTokenService } from './infrastructure/security/jwt-token-service';
 import { SystemClock } from './infrastructure/system/system-clock';
 import { UuidGenerator } from './infrastructure/system/uuid-generator';
 // API layer — REST controllers
 import { AuthController } from './api/auth/auth.controller';
+import { LevelsController } from './api/levels/levels.controller';
 import { JwtAuthGuard } from './api/guards/jwt-auth.guard';
 
 
@@ -70,7 +75,7 @@ function parseExpiresIn(value: string): number {
 
 @Module({
 
-  controllers: [AuthController],
+  controllers: [AuthController, LevelsController],
   
   providers: [
 
@@ -89,6 +94,24 @@ function parseExpiresIn(value: string): number {
     {
       provide: PASSWORD_HASHER,
       useClass: BcryptPasswordHasher,
+    },
+
+    {
+      provide: LEVEL_REPOSITORY,
+      useClass: PostgresLevelRepository,
+    },
+
+    {
+      provide: ListLevelsUseCase,
+      useFactory: (levels: ILevelRepository) => {
+        const useCase = new ListLevelsUseCase(levels);
+        return new LoggingUseCaseDecorator(
+          useCase,
+          'ListLevelsUseCase',
+          new Logger('UseCase'),
+        );
+      },
+      inject: [LEVEL_REPOSITORY],
     },
 
     {

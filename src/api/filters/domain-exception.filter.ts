@@ -12,7 +12,7 @@ import { DomainError } from '../../domain/errors';
 import { EmailAlreadyRegisteredError } from '../../domain/errors/email-already-registered.error';
 import { InvalidCredentialsError } from '../../domain/errors/invalid-credentials.error';
 import { InvalidTokenError } from '../../domain/errors/invalid-token.error';
-
+import { LevelNotFoundError } from '../../domain/errors/level-not-found.error';
 
 /**
  * Shape of every error response the API produces. A single, stable
@@ -64,10 +64,11 @@ export class DomainExceptionFilter implements ExceptionFilter {
    * here without touching catch().
    */
   
-  private static readonly STATUS_BY_ERROR = new Map<Function, number>([
+private static readonly STATUS_BY_ERROR = new Map<Function, number>([
     [EmailAlreadyRegisteredError, HttpStatus.CONFLICT], // 409
     [InvalidCredentialsError, HttpStatus.UNAUTHORIZED], // 401
     [InvalidTokenError, HttpStatus.UNAUTHORIZED], // 401
+    [LevelNotFoundError, HttpStatus.NOT_FOUND], // 404
   ]);
 
   catch(exception: unknown, host: ArgumentsHost): void {
