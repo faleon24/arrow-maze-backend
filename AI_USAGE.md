@@ -693,6 +693,46 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - Keeping the decorator's logger dependency as a small UseCaseLogger interface (instead of importing Nest's Logger) preserves the application layer's freedom from framework imports — the concrete Nest Logger is injected only at the composition root.
 
 
+## Entry 22 — Level catalog vertical slice with a creational Factory Method
+
+**Date**: 2026-07-08
+**Tool**: Claude Opus 4.8 (via claude.ai)
+**Task**: Build the first game-facing backend feature — the level catalog — as a full vertical slice across all four layers, and in doing so cover the one missing GoF category (creational). This unblocks the Flutter front end, which needs a stable levels contract to consume.
+
+**Prompt (paraphrased)**: I told Claude to continue the project and pick whatever maximized my grade, giving it freedom over the design and data types with a single hard constraint from my professor: no enums anywhere. After Claude first designed cell classes that belonged in the app rather than the backend, I supplied my Lucid UML. We then modeled, faithful to that UML: a Level aggregate (Level + BoardLayout + CellInfo) where the board is flat persistence data (not the app's polymorphic cell hierarchy), a DifficultyProfile Strategy (Easy/Medium/Hard) replacing a difficulty enum, and a DifficultyProfileFactory (Factory Method) that materializes the profile from the stored label — the creational pattern the backend was missing. On top: a ListLevels use case (published-only), a Postgres adapter + mapper that runs the factory on read, a public GET /levels endpoint, a LevelNotFoundError wired into the exception filter, an idempotent seed, and tests at all three levels.
+
+**Result**: Claude produced:
+- Domain: Score, DifficultyProfile (Strategy) with Easy/Medium/Hard, DifficultyProfileFactory (Factory Method), CellInfo, BoardLayout (validates board invariants: exactly one START, at least one EXIT, no overlaps, in-bounds), Level entity (holds a DifficultyProfile, not a label; effectiveParTimeMs applies the multiplier), and LevelNotFoundError.
+- Application: ILevelRepository port (findById/findAll/findAllPublished/save), LEVEL_REPOSITORY token, ListLevelsCommand + ListLevelsUseCase (implements UseCase, returns published levels only).
+- Infrastructure: LevelMapper (Data Mapper; toDomain runs DifficultyProfileFactory and re-validates the board), PostgresLevelRepository (Adapter/Repository over Prisma).
+- API: LevelResponseDto (constructor-private + static from; exposes the effective par time), LevelsController (thin, public GET /levels), and the LevelNotFoundError -> 404 entry in the exception filter's OCP map.
+- Persistence: Level Prisma model (reshaped to the UML), two migrations, and an idempotent seed of three published levels built through the real repository so they pass full domain validation.
+- Tests: 21 new unit tests (Score, DifficultyProfile, its factory, CellInfo, BoardLayout, Level, ListLevelsUseCase), 8 integration tests against real Postgres (including a difficulty round-trip proving the factory works end to end), and 6 e2e tests over HTTP (including effective par time and arrow-direction preservation). Totals after the slice: 192 unit (23 suites), 17 integration, 18 e2e. A curl against the running app returned the three seeded levels with correct effective par times (Easy 120000x1.5=180000, Hard 90000x0.75=67500).
+
+**Files affected**:
+- `src/domain/models/score.ts`, `difficulty-profile.ts`, `difficulty-profile.factory.ts`, `cell-info.ts`, `board-layout.ts`, `level.ts` (all new)
+- `src/domain/errors/level-not-found.error.ts` (new), `src/domain/errors/index.ts` (export it)
+- `src/application/ports/out/level-repository.port.ts` (new), `src/application/ports/tokens.ts` (LEVEL_REPOSITORY)
+- `src/application/usecases/levels/list-levels.command.ts`, `list-levels.usecase.ts` (new)
+- `src/infrastructure/persistence/level.mapper.ts`, `postgres-level.repository.ts` (new)
+- `src/api/levels/dto/level-response.dto.ts`, `src/api/levels/levels.controller.ts` (new)
+- `src/api/filters/domain-exception.filter.ts` (LevelNotFoundError -> 404), `src/app.module.ts` (wire controller + use case)
+- `prisma/schema.prisma` (Level model), `prisma/migrations/*` (two migrations), `prisma/seed.ts` (new), `package.json` (seed script)
+- `test/domain/models/*.spec.ts` (6 new), `test/application/usecases/levels/list-levels.usecase.spec.ts` (new), `test/infrastructure/persistence/postgres-level.repository.integration-spec.ts` (new), `test/api/levels/levels.e2e-spec.ts` (new), `test/infrastructure/helpers/database-cleaner.ts` (truncate levels too)
+
+**Modifications made by the developer**:
+- Enforced the "no enums" project constraint and gave Claude design freedom; supplied the Lucid UML when Claude's first cell design turned out to belong in the app rather than the backend, then had it model the backend faithfully to that UML.
+- Applied every edit in my editor, ran both migrations (dev and test DBs), ran the seed, and verified the endpoint over HTTP with curl.
+- Caught a misplaced spec that had been created under test/application/usecases/auth/levels/ and moved it to .../levels/, keeping the test tree honest.
+- Read Jest output to confirm counts rather than trusting claimed numbers; a fixture bug (three levels sharing index 0) surfaced the real @unique(index) constraint in the integration DB and was fixed by giving each fixture a distinct index.
+
+**Lessons learned**:
+- The backend and the app are two different domains on purpose: the server stores a flat board (CellInfo with string type/direction) while the app owns the polymorphic Cell hierarchy and its own CellFactory. Putting the creational pattern in the backend as DifficultyProfileFactory covers the rubric's creational category without waiting on the Flutter phase — insurance against the game slipping.
+- Strategy over enum is not just constraint compliance: an enum only names the tiers and forces callers to switch for behavior, while the DifficultyProfile puts the behavior in the type, so nothing branches and a new tier is one subclass (OCP).
+- The Factory Method earns its place on the hot path: LevelMapper.toDomain runs it on every read, turning the stored label into the right strategy. The integration test proves a "HARD" row comes back as a HardProfile instance, not a decorative pattern bolted on the side.
+- Verifying against reality beats assuming: reading the actual Jest summary, the git status, and the curl output — instead of trusting a remembered count — caught the misplaced spec and the fixture collision before they were committed.
+
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
