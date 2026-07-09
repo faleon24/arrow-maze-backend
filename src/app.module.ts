@@ -11,12 +11,16 @@ import {
   CLOCK,
   ID_GENERATOR,
   LEVEL_REPOSITORY,
+  PROGRESS_REPOSITORY,
 } from './application/ports/tokens';
 
 // Application layer — use cases (framework-agnostic)
 import { RegisterUserUseCase } from './application/usecases/auth/register-user.usecase';
 import { LoginUseCase } from './application/usecases/auth/login.usecase';
 import { ListLevelsUseCase } from './application/usecases/levels/list-levels.usecase';
+import { SubmitScoreUseCase } from './application/usecases/progress/submit-score.usecase';
+import { GetProgressUseCase } from './application/usecases/progress/get-progress.usecase';
+
 
 // Application layer — port interfaces (only for typing the factory params)
 import { IUserRepository } from './application/ports/out/user-repository.port';
@@ -25,11 +29,13 @@ import { ITokenService } from './application/ports/out/token-service.port';
 import { IClock } from './application/ports/out/clock.port';
 import { IIdGenerator } from './application/ports/out/id-generator.port';
 import { ILevelRepository } from './application/ports/out/level-repository.port';
+import { IProgressRepository } from './application/ports/out/progress-repository.port';
 
 // Infrastructure layer — concrete adapters
 import { PrismaService } from './infrastructure/persistence/prisma.service';
 import { PostgresUserRepository } from './infrastructure/persistence/postgres-user.repository';
 import { PostgresLevelRepository } from './infrastructure/persistence/postgres-level.repository';
+import { PostgresProgressRepository } from './infrastructure/persistence/postgres-progress.repository';
 import { BcryptPasswordHasher } from './infrastructure/security/bcrypt-password-hasher';
 import { JwtTokenService } from './infrastructure/security/jwt-token-service';
 import { SystemClock } from './infrastructure/system/system-clock';
@@ -37,6 +43,7 @@ import { UuidGenerator } from './infrastructure/system/uuid-generator';
 // API layer — REST controllers
 import { AuthController } from './api/auth/auth.controller';
 import { LevelsController } from './api/levels/levels.controller';
+import { ProgressController } from './api/progress/progress.controller';
 import { JwtAuthGuard } from './api/guards/jwt-auth.guard';
 
 
@@ -75,7 +82,7 @@ function parseExpiresIn(value: string): number {
 
 @Module({
 
-  controllers: [AuthController, LevelsController],
+  controllers: [AuthController, LevelsController, ProgressController],
   
   providers: [
 
@@ -99,6 +106,40 @@ function parseExpiresIn(value: string): number {
     {
       provide: LEVEL_REPOSITORY,
       useClass: PostgresLevelRepository,
+    },
+
+    {
+      provide: PROGRESS_REPOSITORY,
+      useFactory: (prisma: PrismaService, ids: IIdGenerator) => {
+        return new PostgresProgressRepository(prisma, ids);
+      },
+      inject: [PrismaService, ID_GENERATOR],
+    },
+
+    {
+      provide: SubmitScoreUseCase,
+      useFactory: (progress: IProgressRepository, clock: IClock) => {
+        const useCase = new SubmitScoreUseCase(progress, clock);
+        return new LoggingUseCaseDecorator(
+          useCase,
+          'SubmitScoreUseCase',
+          new Logger('UseCase'),
+        );
+      },
+      inject: [PROGRESS_REPOSITORY, CLOCK],
+    },
+
+    {
+      provide: GetProgressUseCase,
+      useFactory: (progress: IProgressRepository) => {
+        const useCase = new GetProgressUseCase(progress);
+        return new LoggingUseCaseDecorator(
+          useCase,
+          'GetProgressUseCase',
+          new Logger('UseCase'),
+        );
+      },
+      inject: [PROGRESS_REPOSITORY],
     },
 
     {
