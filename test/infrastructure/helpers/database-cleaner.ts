@@ -18,7 +18,7 @@ export class DatabaseCleaner {
    */
   async cleanAll(): Promise<void> {
     await this.prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "users" RESTART IDENTITY CASCADE;',
+      'TRUNCATE TABLE "users", "levels" RESTART IDENTITY CASCADE;',
     );
   }
 }
