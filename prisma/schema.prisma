@@ -33,3 +33,18 @@ model Level {
 
   @@map("levels")
 }
+
+model ProgressEntry {
+  id          String   @id
+  userId      String
+  levelId     String
+  moves       Int
+  timeMs      Int
+  stars       Int
+  attempts    Int
+  completedAt DateTime
+  updatedAt   DateTime @default(now())
+
+  @@unique([userId, levelId])
+  @@map("progress_entries")
+}
