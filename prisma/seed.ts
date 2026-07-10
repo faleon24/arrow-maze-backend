@@ -28,13 +28,18 @@ import {
  * accumulating duplicates.
  */
 
-/** Level 1 — a gentle 3x3 introduction on the easy tier. */
+/**
+ * Level 1 (EASY) — a 2x2 board where every arrow points straight off the
+ * edge. All four are clearable from the start, in any order. The gentlest
+ * possible introduction to the "tap an arrow to send it off the board"
+ * mechanic.
+ */
 function buildLevelOne(): Level {
-  const board = new BoardLayout(3, 3, [
-    new CellInfo('0,0', 'START'),
-    new CellInfo('0,2', 'ARROW', 'DOWN'),
-    new CellInfo('1,1', 'WALL'),
-    new CellInfo('2,2', 'EXIT'),
+  const board = new BoardLayout(2, 2, [
+    new CellInfo('0,0', 'ARROW', 'UP'),
+    new CellInfo('0,1', 'ARROW', 'RIGHT'),
+    new CellInfo('1,0', 'ARROW', 'LEFT'),
+    new CellInfo('1,1', 'ARROW', 'DOWN'),
   ]);
   return new Level({
     id: '00000000-0000-0000-0000-000000000001',
@@ -46,15 +51,23 @@ function buildLevelOne(): Level {
   });
 }
 
-/** Level 2 — a 4x4 with more arrows on the medium tier. */
+/**
+ * Level 2 (MEDIUM) — a 3x3 board that introduces blocking. In the top
+ * row, two right-pointing arrows sit in a line: the inner one (0,0) is
+ * blocked by the outer one (0,1), so the outer must be cleared first.
+ * The remaining arrows point at open edges. Teaches "clear the outer
+ * arrow to free the inner one".
+ */
 function buildLevelTwo(): Level {
-  const board = new BoardLayout(4, 4, [
-    new CellInfo('0,0', 'START'),
-    new CellInfo('0,3', 'ARROW', 'DOWN'),
-    new CellInfo('1,1', 'WALL'),
-    new CellInfo('2,2', 'WALL'),
-    new CellInfo('3,0', 'ARROW', 'RIGHT'),
-    new CellInfo('3,3', 'EXIT'),
+  const board = new BoardLayout(3, 3, [
+    // Top row: a blocking pair pointing right.
+    new CellInfo('0,0', 'ARROW', 'RIGHT'),
+    new CellInfo('0,1', 'ARROW', 'RIGHT'),
+    // A column that clears downward.
+    new CellInfo('1,2', 'ARROW', 'DOWN'),
+    new CellInfo('2,2', 'ARROW', 'DOWN'),
+    // A lone arrow pointing at the left edge.
+    new CellInfo('2,0', 'ARROW', 'LEFT'),
   ]);
   return new Level({
     id: '00000000-0000-0000-0000-000000000002',
@@ -66,17 +79,25 @@ function buildLevelTwo(): Level {
   });
 }
 
-/** Level 3 — a 5x5 maze on the hard tier. */
+/**
+ * Level 3 (HARD) — a 4x4 board with several blocking chains that cross,
+ * so the player must plan the order. A valid clearing sequence exists
+ * (e.g. release the edge-facing arrows to open lanes, then the inner
+ * ones), but no single obvious first move solves it.
+ */
 function buildLevelThree(): Level {
-  const board = new BoardLayout(5, 5, [
-    new CellInfo('0,0', 'START'),
-    new CellInfo('0,4', 'ARROW', 'DOWN'),
-    new CellInfo('1,2', 'WALL'),
-    new CellInfo('2,1', 'WALL'),
-    new CellInfo('2,3', 'ARROW', 'LEFT'),
-    new CellInfo('3,3', 'WALL'),
-    new CellInfo('4,0', 'ARROW', 'RIGHT'),
-    new CellInfo('4,4', 'EXIT'),
+  const board = new BoardLayout(4, 4, [
+    // Row 0: two arrows pointing up (both reach the top edge directly).
+    new CellInfo('0,1', 'ARROW', 'UP'),
+    new CellInfo('0,3', 'ARROW', 'LEFT'),
+    // Row 1: a right-pointing pair (inner blocked by outer).
+    new CellInfo('1,0', 'ARROW', 'RIGHT'),
+    new CellInfo('1,2', 'ARROW', 'UP'),
+    // Row 2: downward arrows.
+    new CellInfo('2,1', 'ARROW', 'DOWN'),
+    new CellInfo('2,3', 'ARROW', 'DOWN'),
+    // Row 3: an arrow pointing at the bottom edge.
+    new CellInfo('3,2', 'ARROW', 'LEFT'),
   ]);
   return new Level({
     id: '00000000-0000-0000-0000-000000000003',
