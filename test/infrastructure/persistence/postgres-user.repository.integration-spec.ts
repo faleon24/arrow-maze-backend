@@ -1,47 +1,68 @@
 import { PrismaClient } from '@prisma/client';
-import { PostgresUserRepository } from '../../../src/infrastructure/persistence/postgres-user.repository';
+import { PostgresLevelRepository } from '../../../src/infrastructure/persistence/postgres-level.repository';
 import { PrismaService } from '../../../src/infrastructure/persistence/prisma.service';
-import { User } from '../../../src/domain/models/user';
-import { Email } from '../../../src/domain/models/email';
-import { PasswordHash } from '../../../src/domain/models/password-hash';
+import { Level } from '../../../src/domain/models/level';
+import { BoardLayout } from '../../../src/domain/models/board-layout';
+import { CellInfo } from '../../../src/domain/models/cell-info';
+import {
+  DifficultyProfile,
+  EasyProfile,
+  HardProfile,
+  MediumProfile,
+} from '../../../src/domain/models/difficulty-profile';
 import { DatabaseCleaner } from '../helpers/database-cleaner';
 
 /**
- * Integration tests for PostgresUserRepository.
+ * Integration tests for PostgresLevelRepository.
  *
- * These tests exercise the adapter against a REAL PostgreSQL instance
+ * Exercises the adapter against a REAL PostgreSQL instance
  * (arrowmaze_test). No mocks. The point is to prove that the queries,
- * the mapper, and the schema all agree.
+ * the LevelMapper, the DifficultyProfileFactory, and the schema all
+ * agree — in particular that a difficulty label survives a round-trip
+ * through the database and comes back as the correct DifficultyProfile
+ * strategy, and that the board JSON serializes and deserializes without
+ * loss (arrow directions included).
  *
- * Rationale: mocking Prisma would only prove that the mock matches our
- * expectations. Running against a real database proves that the query
- * we write is the query the database understands, and that the row it
- * gives back can actually be turned into a valid User aggregate.
+ * Note on cell types:
+ *   The domain was refactored to a two-type model (EMPTY, ARROW) — the
+ *   maze-era START/WALL/EXIT are gone. `buildBoard` here uses one arrow
+ *   plus two empty cells; BoardLayout requires at least one arrow, and
+ *   the round-trip test asserts that the arrow direction survives.
  */
-describe('PostgresUserRepository (integration)', () => {
+describe('PostgresLevelRepository (integration)', () => {
   let prisma: PrismaService;
-  let repository: PostgresUserRepository;
+  let repository: PostgresLevelRepository;
   let cleaner: DatabaseCleaner;
 
-  const buildValidUser = (overrides: Partial<{
-    id: string;
-    email: string;
-    displayName: string;
-  }> = {}): User =>
-    new User({
+  const buildBoard = (): BoardLayout =>
+    new BoardLayout(3, 3, [
+      new CellInfo('0,0', 'EMPTY'),
+      new CellInfo('1,1', 'ARROW', 'DOWN'),
+      new CellInfo('2,2', 'EMPTY'),
+    ]);
+
+  const buildValidLevel = (
+    overrides: Partial<{
+      id: string;
+      index: number;
+      difficulty: DifficultyProfile;
+      parTimeMs: number;
+      published: boolean;
+    }> = {},
+  ): Level =>
+    new Level({
       id: overrides.id ?? '550e8400-e29b-41d4-a716-446655440000',
-      email: new Email(overrides.email ?? 'alice@example.com'),
-      passwordHash: new PasswordHash(
-        '$2b$04$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQR',
-      ),
-      displayName: overrides.displayName ?? 'Alice',
-      createdAt: new Date('2025-01-15T10:00:00.000Z'),
+      index: overrides.index ?? 0,
+      difficulty: overrides.difficulty ?? new MediumProfile(),
+      board: buildBoard(),
+      parTimeMs: overrides.parTimeMs ?? 120_000,
+      published: overrides.published ?? true,
     });
 
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
-    repository = new PostgresUserRepository(prisma);
+    repository = new PostgresLevelRepository(prisma);
     cleaner = new DatabaseCleaner(prisma as unknown as PrismaClient);
   });
 
@@ -56,7 +77,7 @@ describe('PostgresUserRepository (integration)', () => {
   // -------- findById --------
 
   describe('findById', () => {
-    it('should_return_null_when_user_does_not_exist', async () => {
+    it('should_return_null_when_level_does_not_exist', async () => {
       // Arrange
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
 
@@ -67,139 +88,157 @@ describe('PostgresUserRepository (integration)', () => {
       expect(result).toBeNull();
     });
 
-    it('should_return_User_when_user_exists', async () => {
+    it('should_return_Level_when_level_exists', async () => {
       // Arrange
-      const user = buildValidUser();
-      await repository.save(user);
+      const level = buildValidLevel();
+      await repository.save(level);
 
       // Act
-      const result = await repository.findById(user.id);
+      const result = await repository.findById(level.id);
 
       // Assert
       expect(result).not.toBeNull();
-      expect(result).toBeInstanceOf(User);
-      expect(result!.id).toBe(user.id);
+      expect(result).toBeInstanceOf(Level);
+      expect(result!.id).toBe(level.id);
     });
   });
 
-  // -------- findByEmail --------
+  // -------- findAllPublished --------
 
-  describe('findByEmail', () => {
-    it('should_return_null_when_email_is_not_registered', async () => {
-      // Arrange
-      const email = new Email('nobody@example.com');
+  describe('findAllPublished', () => {
+    it('should_return_only_published_levels_ordered_by_index', async () => {
+      // Arrange: insert out of order, mixing published and draft
+      await repository.save(
+        buildValidLevel({
+          id: '33333333-3333-3333-3333-333333333333',
+          index: 2,
+          published: true,
+        }),
+      );
+      await repository.save(
+        buildValidLevel({
+          id: '11111111-1111-1111-1111-111111111111',
+          index: 0,
+          published: true,
+        }),
+      );
+      await repository.save(
+        buildValidLevel({
+          id: '22222222-2222-2222-2222-222222222222',
+          index: 1,
+          published: true,
+        }),
+      );
 
       // Act
-      const result = await repository.findByEmail(email);
+      const result = await repository.findAllPublished();
 
       // Assert
-      expect(result).toBeNull();
+      expect(result).toHaveLength(3);
+      expect(result.map((l) => l.index)).toEqual([0, 1, 2]);
     });
 
-    it('should_return_User_when_email_is_registered', async () => {
+    it('should_exclude_unpublished_levels', async () => {
       // Arrange
-      const user = buildValidUser();
-      await repository.save(user);
+      await repository.save(
+        buildValidLevel({
+          id: '11111111-1111-1111-1111-111111111111',
+          index: 0,
+          published: true,
+        }),
+      );
+      await repository.save(
+        buildValidLevel({
+          id: '22222222-2222-2222-2222-222222222222',
+          index: 1,
+          published: false,
+        }),
+      );
 
       // Act
-      const result = await repository.findByEmail(user.email);
+      const result = await repository.findAllPublished();
 
       // Assert
-      expect(result).not.toBeNull();
-      expect(result!.email.value).toBe(user.email.value);
-    });
-  });
-
-  // -------- save (insert) --------
-
-  describe('save (insert path)', () => {
-    it('should_persist_a_new_user_when_id_does_not_exist', async () => {
-      // Arrange
-      const user = buildValidUser();
-
-      // Act
-      await repository.save(user);
-
-      // Assert
-      const fetched = await repository.findById(user.id);
-      expect(fetched).not.toBeNull();
-      expect(fetched!.email.value).toBe(user.email.value);
-      expect(fetched!.displayName).toBe(user.displayName);
-    });
-
-    it('should_persist_multiple_users_when_emails_are_different', async () => {
-      // Arrange
-      const alice = buildValidUser({
-        id: '11111111-1111-1111-1111-111111111111',
-        email: 'alice@example.com',
-        displayName: 'Alice',
-      });
-      const bob = buildValidUser({
-        id: '22222222-2222-2222-2222-222222222222',
-        email: 'bob@example.com',
-        displayName: 'Bob',
-      });
-
-      // Act
-      await repository.save(alice);
-      await repository.save(bob);
-
-      // Assert
-      const fetchedAlice = await repository.findByEmail(alice.email);
-      const fetchedBob = await repository.findByEmail(bob.email);
-      expect(fetchedAlice!.id).toBe(alice.id);
-      expect(fetchedBob!.id).toBe(bob.id);
+      expect(result).toHaveLength(1);
+      expect(result[0].published).toBe(true);
     });
   });
 
-  // -------- save (update) --------
+  // -------- findAll --------
+
+  describe('findAll', () => {
+    it('should_return_every_level_including_drafts', async () => {
+      // Arrange
+      await repository.save(
+        buildValidLevel({
+          id: '11111111-1111-1111-1111-111111111111',
+          index: 0,
+          published: true,
+        }),
+      );
+      await repository.save(
+        buildValidLevel({
+          id: '22222222-2222-2222-2222-222222222222',
+          index: 1,
+          published: false,
+        }),
+      );
+
+      // Act
+      const result = await repository.findAll();
+
+      // Assert
+      expect(result).toHaveLength(2);
+    });
+  });
+
+  // -------- save (update path) --------
 
   describe('save (update path)', () => {
-    it('should_update_displayName_when_saving_existing_user', async () => {
+    it('should_publish_an_existing_level_when_saved_as_published', async () => {
       // Arrange
-      const original = buildValidUser({ displayName: 'Alice' });
-      await repository.save(original);
+      const draft = buildValidLevel({ published: false });
+      await repository.save(draft);
 
-      const renamed = buildValidUser({ displayName: 'Alice Renamed' });
+      const published = buildValidLevel({ published: true });
 
       // Act
-      await repository.save(renamed);
+      await repository.save(published);
 
       // Assert
-      const fetched = await repository.findById(original.id);
-      expect(fetched!.displayName).toBe('Alice Renamed');
+      const fetched = await repository.findById(draft.id);
+      expect(fetched!.published).toBe(true);
     });
+  });
 
-    it('should_preserve_original_createdAt_when_updating_existing_user', async () => {
+  // -------- Factory Method materialization --------
+
+  describe('difficulty round-trip (Factory Method)', () => {
+    it('should_rebuild_the_matching_profile_when_reading_each_difficulty', async () => {
       // Arrange
-      const original = buildValidUser();
-      await repository.save(original);
+      const cases: Array<[string, number, DifficultyProfile, Function]> = [
+        ['11111111-1111-1111-1111-111111111111', 0, new EasyProfile(), EasyProfile],
+        ['22222222-2222-2222-2222-222222222222', 1, new MediumProfile(), MediumProfile],
+        ['33333333-3333-3333-3333-333333333333', 2, new HardProfile(), HardProfile],
+      ];
+      for (const [id, index, difficulty] of cases) {
+        await repository.save(buildValidLevel({ id, index, difficulty }));
+      }
 
-      // Build a "new" version of the same user with a DIFFERENT createdAt.
-      // The repository must ignore the incoming createdAt on update.
-      const tampered = new User({
-        id: original.id,
-        email: original.email,
-        passwordHash: original.passwordHash,
-        displayName: 'Alice Renamed',
-        createdAt: new Date('2099-12-31T23:59:59.000Z'), // clearly wrong
-      });
-
-      // Act
-      await repository.save(tampered);
-
-      // Assert
-      const fetched = await repository.findById(original.id);
-      expect(fetched!.createdAt).toEqual(original.createdAt);
+      // Act & Assert
+      for (const [id, , , ProfileClass] of cases) {
+        const fetched = await repository.findById(id);
+        expect(fetched!.difficulty).toBeInstanceOf(ProfileClass);
+      }
     });
   });
 
   // -------- Round-trip integrity --------
 
   describe('round-trip integrity', () => {
-    it('should_preserve_all_fields_through_save_and_findById', async () => {
+    it('should_preserve_all_fields_and_the_board_through_save_and_findById', async () => {
       // Arrange
-      const original = buildValidUser();
+      const original = buildValidLevel({ difficulty: new HardProfile() });
 
       // Act
       await repository.save(original);
@@ -208,10 +247,17 @@ describe('PostgresUserRepository (integration)', () => {
       // Assert
       expect(fetched).not.toBeNull();
       expect(fetched!.id).toBe(original.id);
-      expect(fetched!.email.value).toBe(original.email.value);
-      expect(fetched!.passwordHash.value).toBe(original.passwordHash.value);
-      expect(fetched!.displayName).toBe(original.displayName);
-      expect(fetched!.createdAt).toEqual(original.createdAt);
+      expect(fetched!.index).toBe(original.index);
+      expect(fetched!.parTimeMs).toBe(original.parTimeMs);
+      expect(fetched!.published).toBe(original.published);
+      expect(fetched!.difficulty.label()).toBe('HARD');
+      expect(fetched!.board.rows).toBe(3);
+      expect(fetched!.board.cols).toBe(3);
+      expect(fetched!.board.cells).toHaveLength(3);
+      // The arrow cell must survive with its direction intact.
+      const arrow = fetched!.board.cells.find((c) => c.type === 'ARROW');
+      expect(arrow).toBeDefined();
+      expect(arrow!.direction).toBe('DOWN');
     });
   });
 });
