@@ -6,7 +6,6 @@ import { AppModule } from './app.module';
 import { DomainExceptionFilter } from './api/filters/domain-exception.filter';
 import { LoggingInterceptor } from './api/interceptors/logging.interceptor';
 
-
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -34,6 +33,15 @@ async function bootstrap() {
 
   app.useGlobalInterceptors(new LoggingInterceptor());
 
+  // Hook Node's SIGTERM/SIGINT to Nest's lifecycle so PrismaService's
+  // onModuleDestroy runs on a normal shutdown (Ctrl+C in dev, container
+  // stop in prod) and the DB connection is closed cleanly. Without this,
+  // Nest does not intercept the signals and the process exits before
+  // module destructors fire — not a leak (the OS reclaims sockets), but
+  // it means half-open transactions from other tenants of the DB may
+  // stall until Postgres times them out.
+  app.enableShutdownHooks();
+
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Arrow Maze API')
     .setDescription(
@@ -51,4 +59,13 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`Arrow Maze backend running on http://localhost:${port}/api`);
 }
-bootstrap();
+
+// Explicit .catch() rather than a floating promise: if bootstrap fails
+// (JWT_SECRET missing, port in use, DB unreachable, etc.), print the
+// error and exit non-zero. Node ≥ 15 exits on unhandled rejections
+// anyway, but formalizing this gives us a friendly message and calms
+// the no-floating-promises lint that the project already enables.
+bootstrap().catch((err) => {
+  console.error('Failed to bootstrap Arrow Maze backend:', err);
+  process.exit(1);
+});
