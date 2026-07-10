@@ -9,6 +9,19 @@ import { LoggingInterceptor } from './api/interceptors/logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Enable CORS so browser-based clients (the Flutter web app during
+  // development, served from a different localhost port) may call the
+  // API. Browsers block cross-origin requests unless the server opts in
+  // with these headers; non-browser clients like curl are unaffected.
+  // In development we allow any origin; a production build would
+  // restrict this to the app's real domain.
+  app.enableCors({
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({
