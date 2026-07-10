@@ -39,8 +39,8 @@ class FakeLevelRepository implements ILevelRepository {
 
 function buildLevel(index: number): Level {
   const board = new BoardLayout(2, 2, [
-    new CellInfo('0,0', 'START'),
-    new CellInfo('1,1', 'EXIT'),
+    new CellInfo('0,0', 'ARROW', 'RIGHT'),
+    new CellInfo('1,1', 'ARROW', 'LEFT'),
   ]);
   return new Level({
     id: `level-${index}`,

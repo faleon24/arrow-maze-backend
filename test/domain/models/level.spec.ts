@@ -9,8 +9,8 @@ import {
 
 function buildBoard(): BoardLayout {
   return new BoardLayout(3, 3, [
-    new CellInfo('0,0', 'START'),
-    new CellInfo('2,2', 'EXIT'),
+    new CellInfo('0,0', 'ARROW', 'RIGHT'),
+    new CellInfo('2,2', 'ARROW', 'LEFT'),
   ]);
 }
 
