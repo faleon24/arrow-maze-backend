@@ -16,13 +16,8 @@
  * new CellInfo.
  */
 export class CellInfo {
-  private static readonly KNOWN_TYPES = [
-    'EMPTY',
-    'WALL',
-    'ARROW',
-    'EXIT',
-    'START',
-  ];
+  
+  private static readonly KNOWN_TYPES = ['EMPTY', 'ARROW'];
 
   private static readonly KNOWN_DIRECTIONS = [
     'UP',

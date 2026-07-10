@@ -10,9 +10,9 @@ import { CellInfo } from './cell-info';
  * serves it.
  *
  * SRP: guarantees a layout is internally consistent (positive
- * dimensions, exactly one START and at least one EXIT, no cell placed
- * off the grid or on top of another). It does not simulate movement or
- * check solvability — that is the app's PathResolver, not the server's.
+ * dimensions, at least one arrow, no cell placed off the grid or on top
+ * of another). It does not check solvability — the app resolves which
+ * arrows are clearable at play time, not the server.
  */
 export class BoardLayout {
   private readonly _rows: number;
@@ -31,8 +31,7 @@ export class BoardLayout {
     }
 
     const seenPositions = new Set<string>();
-    let startCount = 0;
-    let exitCount = 0;
+    let arrowCount = 0;
 
     for (const cell of cells) {
       if (!(cell instanceof CellInfo)) {
@@ -48,17 +47,13 @@ export class BoardLayout {
 
       BoardLayout.assertWithinGrid(cell.position, rows, cols);
 
-      if (cell.type === 'START') startCount += 1;
-      if (cell.type === 'EXIT') exitCount += 1;
+      if (cell.type === 'ARROW') arrowCount += 1;
     }
 
-    if (startCount !== 1) {
-      throw new Error(
-        `a board must have exactly one START cell, found ${startCount}`,
-      );
-    }
-    if (exitCount < 1) {
-      throw new Error('a board must have at least one EXIT cell');
+    // A level is a board full of arrows to clear. A board with no arrows
+    // would already be solved, so it is not a valid level.
+    if (arrowCount < 1) {
+      throw new Error('a board must have at least one ARROW cell');
     }
 
     this._rows = rows;
