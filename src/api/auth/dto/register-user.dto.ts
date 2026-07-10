@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
-
+import { IsEmail, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 /**
  * RegisterUserDto — HTTP request body for POST /auth/register.
  *
@@ -39,8 +38,9 @@ export class RegisterUserDto {
     minLength: 1,
     maxLength: 50,
   })
-  @IsString({ message: 'displayName must be a string' })
-  @MinLength(1, { message: 'displayName cannot be empty' })
-  @MaxLength(50, { message: 'displayName must be at most 50 characters long' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  @Matches(/\S/, { message: 'displayName cannot be blank' })
   displayName!: string;
 }
