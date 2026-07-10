@@ -22,6 +22,12 @@ import { DatabaseCleaner } from '../helpers/database-cleaner';
  * through the database and comes back as the correct DifficultyProfile
  * strategy, and that the board JSON serializes and deserializes without
  * loss (arrow directions included).
+ *
+ * Note on cell types:
+ *   The domain was refactored to a two-type model (EMPTY, ARROW) — the
+ *   maze-era START/WALL/EXIT are gone. buildBoard here uses one arrow
+ *   plus two empty cells; BoardLayout requires at least one arrow, and
+ *   the round-trip test asserts that the arrow direction survives.
  */
 describe('PostgresLevelRepository (integration)', () => {
   let prisma: PrismaService;
@@ -30,9 +36,9 @@ describe('PostgresLevelRepository (integration)', () => {
 
   const buildBoard = (): BoardLayout =>
     new BoardLayout(3, 3, [
-      new CellInfo('0,0', 'START'),
+      new CellInfo('0,0', 'EMPTY'),
       new CellInfo('1,1', 'ARROW', 'DOWN'),
-      new CellInfo('2,2', 'EXIT'),
+      new CellInfo('2,2', 'EMPTY'),
     ]);
 
   const buildValidLevel = (
@@ -72,25 +78,15 @@ describe('PostgresLevelRepository (integration)', () => {
 
   describe('findById', () => {
     it('should_return_null_when_level_does_not_exist', async () => {
-      // Arrange
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
-
-      // Act
       const result = await repository.findById(nonExistentId);
-
-      // Assert
       expect(result).toBeNull();
     });
 
     it('should_return_Level_when_level_exists', async () => {
-      // Arrange
       const level = buildValidLevel();
       await repository.save(level);
-
-      // Act
       const result = await repository.findById(level.id);
-
-      // Assert
       expect(result).not.toBeNull();
       expect(result).toBeInstanceOf(Level);
       expect(result!.id).toBe(level.id);
@@ -101,7 +97,6 @@ describe('PostgresLevelRepository (integration)', () => {
 
   describe('findAllPublished', () => {
     it('should_return_only_published_levels_ordered_by_index', async () => {
-      // Arrange: insert out of order, mixing published and draft
       await repository.save(
         buildValidLevel({
           id: '33333333-3333-3333-3333-333333333333',
@@ -124,16 +119,13 @@ describe('PostgresLevelRepository (integration)', () => {
         }),
       );
 
-      // Act
       const result = await repository.findAllPublished();
 
-      // Assert
       expect(result).toHaveLength(3);
       expect(result.map((l) => l.index)).toEqual([0, 1, 2]);
     });
 
     it('should_exclude_unpublished_levels', async () => {
-      // Arrange
       await repository.save(
         buildValidLevel({
           id: '11111111-1111-1111-1111-111111111111',
@@ -149,10 +141,8 @@ describe('PostgresLevelRepository (integration)', () => {
         }),
       );
 
-      // Act
       const result = await repository.findAllPublished();
 
-      // Assert
       expect(result).toHaveLength(1);
       expect(result[0].published).toBe(true);
     });
@@ -162,7 +152,6 @@ describe('PostgresLevelRepository (integration)', () => {
 
   describe('findAll', () => {
     it('should_return_every_level_including_drafts', async () => {
-      // Arrange
       await repository.save(
         buildValidLevel({
           id: '11111111-1111-1111-1111-111111111111',
@@ -178,10 +167,8 @@ describe('PostgresLevelRepository (integration)', () => {
         }),
       );
 
-      // Act
       const result = await repository.findAll();
 
-      // Assert
       expect(result).toHaveLength(2);
     });
   });
@@ -190,16 +177,13 @@ describe('PostgresLevelRepository (integration)', () => {
 
   describe('save (update path)', () => {
     it('should_publish_an_existing_level_when_saved_as_published', async () => {
-      // Arrange
       const draft = buildValidLevel({ published: false });
       await repository.save(draft);
 
       const published = buildValidLevel({ published: true });
 
-      // Act
       await repository.save(published);
 
-      // Assert
       const fetched = await repository.findById(draft.id);
       expect(fetched!.published).toBe(true);
     });
@@ -209,7 +193,6 @@ describe('PostgresLevelRepository (integration)', () => {
 
   describe('difficulty round-trip (Factory Method)', () => {
     it('should_rebuild_the_matching_profile_when_reading_each_difficulty', async () => {
-      // Arrange
       const cases: Array<[string, number, DifficultyProfile, Function]> = [
         ['11111111-1111-1111-1111-111111111111', 0, new EasyProfile(), EasyProfile],
         ['22222222-2222-2222-2222-222222222222', 1, new MediumProfile(), MediumProfile],
@@ -219,7 +202,6 @@ describe('PostgresLevelRepository (integration)', () => {
         await repository.save(buildValidLevel({ id, index, difficulty }));
       }
 
-      // Act & Assert
       for (const [id, , , ProfileClass] of cases) {
         const fetched = await repository.findById(id);
         expect(fetched!.difficulty).toBeInstanceOf(ProfileClass);
@@ -231,14 +213,11 @@ describe('PostgresLevelRepository (integration)', () => {
 
   describe('round-trip integrity', () => {
     it('should_preserve_all_fields_and_the_board_through_save_and_findById', async () => {
-      // Arrange
       const original = buildValidLevel({ difficulty: new HardProfile() });
 
-      // Act
       await repository.save(original);
       const fetched = await repository.findById(original.id);
 
-      // Assert
       expect(fetched).not.toBeNull();
       expect(fetched!.id).toBe(original.id);
       expect(fetched!.index).toBe(original.index);
@@ -248,7 +227,6 @@ describe('PostgresLevelRepository (integration)', () => {
       expect(fetched!.board.rows).toBe(3);
       expect(fetched!.board.cols).toBe(3);
       expect(fetched!.board.cells).toHaveLength(3);
-      // The arrow cell must survive with its direction intact.
       const arrow = fetched!.board.cells.find((c) => c.type === 'ARROW');
       expect(arrow).toBeDefined();
       expect(arrow!.direction).toBe('DOWN');
