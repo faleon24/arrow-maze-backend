@@ -1,8 +1,7 @@
 import { Module, Logger } from '@nestjs/common';
 import { GetUserByIdUseCase } from './application/usecases/auth/get-user-by-id.usecase';
 import { LoggingUseCaseDecorator } from './application/decorators/logging-use-case.decorator';
-
-
+import { UseCase } from './application/usecases/use-case';
 // Injection tokens (application layer contract)
 import {
   USER_REPOSITORY,
@@ -13,15 +12,12 @@ import {
   LEVEL_REPOSITORY,
   PROGRESS_REPOSITORY,
 } from './application/ports/tokens';
-
 // Application layer — use cases (framework-agnostic)
 import { RegisterUserUseCase } from './application/usecases/auth/register-user.usecase';
 import { LoginUseCase } from './application/usecases/auth/login.usecase';
 import { ListLevelsUseCase } from './application/usecases/levels/list-levels.usecase';
 import { SubmitScoreUseCase } from './application/usecases/progress/submit-score.usecase';
 import { GetProgressUseCase } from './application/usecases/progress/get-progress.usecase';
-
-
 // Application layer — port interfaces (only for typing the factory params)
 import { IUserRepository } from './application/ports/out/user-repository.port';
 import { IPasswordHasher } from './application/ports/out/password-hasher.port';
@@ -30,7 +26,6 @@ import { IClock } from './application/ports/out/clock.port';
 import { IIdGenerator } from './application/ports/out/id-generator.port';
 import { ILevelRepository } from './application/ports/out/level-repository.port';
 import { IProgressRepository } from './application/ports/out/progress-repository.port';
-
 // Infrastructure layer — concrete adapters
 import { PrismaService } from './infrastructure/persistence/prisma.service';
 import { PostgresUserRepository } from './infrastructure/persistence/postgres-user.repository';
@@ -45,8 +40,6 @@ import { AuthController } from './api/auth/auth.controller';
 import { LevelsController } from './api/levels/levels.controller';
 import { ProgressController } from './api/progress/progress.controller';
 import { JwtAuthGuard } from './api/guards/jwt-auth.guard';
-
-
 /**
  * AppModule is the composition root of the application.
  *
@@ -58,7 +51,6 @@ import { JwtAuthGuard } from './api/guards/jwt-auth.guard';
  * are wired via useFactory rather than @Injectable decorators, keeping
  * them portable to any framework or runtime.
  */
-
 /**
  * Parses a human-friendly duration string ("7d", "1h", "3600s") into
  * seconds. Kept as a local helper so JwtTokenService can stay a pure
@@ -69,7 +61,7 @@ function parseExpiresIn(value: string): number {
   const match = /^(\d+)([smhd])$/.exec(value);
   if (!match) {
     throw new Error(
-      `Invalid JWT_EXPIRES_IN value: "${value}". Expected format like "7d", "1h", "3600s".`,
+      `Invalid JWT_EXPIRES_IN value: "${value}". Expected format like "7d","1h", "3600s".`,
     );
   }
   const amount = parseInt(match[1], 10);
@@ -77,20 +69,30 @@ function parseExpiresIn(value: string): number {
   const multipliers: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
   return amount * multipliers[unit];
 }
-
-
-
+/**
+ * withLogging — wraps a use case in the LoggingUseCaseDecorator with
+ * a per-name Nest logger. Collapses six identical inline blocks in
+ * the providers array below into a single call site: the AOP wiring
+ * (which logger, which name) lives in one place instead of six, so
+ * a future change (say, swap for a structured logger, or add a metrics
+ * decorator on top) touches this helper and nothing else. That is OCP
+ * applied to the composition root itself.
+ *
+ * Generic in <C, R> so TypeScript preserves each use case's command
+ * and result types through the wrap — the returned UseCase is still
+ * strongly typed, not any/unknown.
+ */
+function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
+  return new LoggingUseCaseDecorator(uc, name, new Logger('UseCase'));
+}
 @Module({
-
   controllers: [AuthController, LevelsController, ProgressController],
-  
-  providers: [
 
+  providers: [
     // ------------------------------------------------------------------
     // Infrastructure: Prisma
     // ------------------------------------------------------------------
-      PrismaService,
-
+    PrismaService,
     // ------------------------------------------------------------------
     // Outbound port adapters — one per port, bound by its injection token
     // ------------------------------------------------------------------
@@ -102,12 +104,10 @@ function parseExpiresIn(value: string): number {
       provide: PASSWORD_HASHER,
       useClass: BcryptPasswordHasher,
     },
-
     {
       provide: LEVEL_REPOSITORY,
       useClass: PostgresLevelRepository,
     },
-
     {
       provide: PROGRESS_REPOSITORY,
       useFactory: (prisma: PrismaService, ids: IIdGenerator) => {
@@ -115,84 +115,54 @@ function parseExpiresIn(value: string): number {
       },
       inject: [PrismaService, ID_GENERATOR],
     },
-
     {
       provide: SubmitScoreUseCase,
-      useFactory: (progress: IProgressRepository, clock: IClock) => {
-        const useCase = new SubmitScoreUseCase(progress, clock);
-        return new LoggingUseCaseDecorator(
-          useCase,
+      useFactory: (progress: IProgressRepository, clock: IClock) =>
+        withLogging(
+          new SubmitScoreUseCase(progress, clock),
           'SubmitScoreUseCase',
-          new Logger('UseCase'),
-        );
-      },
+        ),
       inject: [PROGRESS_REPOSITORY, CLOCK],
     },
-
     {
       provide: GetProgressUseCase,
-      useFactory: (progress: IProgressRepository) => {
-        const useCase = new GetProgressUseCase(progress);
-        return new LoggingUseCaseDecorator(
-          useCase,
-          'GetProgressUseCase',
-          new Logger('UseCase'),
-        );
-      },
+      useFactory: (progress: IProgressRepository) =>
+        withLogging(new GetProgressUseCase(progress), 'GetProgressUseCase'),
       inject: [PROGRESS_REPOSITORY],
     },
-
     {
       provide: ListLevelsUseCase,
-      useFactory: (levels: ILevelRepository) => {
-        const useCase = new ListLevelsUseCase(levels);
-        return new LoggingUseCaseDecorator(
-          useCase,
-          'ListLevelsUseCase',
-          new Logger('UseCase'),
-        );
-      },
+      useFactory: (levels: ILevelRepository) =>
+        withLogging(new ListLevelsUseCase(levels), 'ListLevelsUseCase'),
       inject: [LEVEL_REPOSITORY],
     },
-
     {
-     provide: GetUserByIdUseCase,
-      useFactory: (users: IUserRepository) => {
-        const useCase = new GetUserByIdUseCase(users);
-        return new LoggingUseCaseDecorator(
-          useCase,
-          'GetUserByIdUseCase',
-          new Logger('UseCase'),
-        );
-      },
+      provide: GetUserByIdUseCase,
+      useFactory: (users: IUserRepository) =>
+        withLogging(new GetUserByIdUseCase(users), 'GetUserByIdUseCase'),
       inject: [USER_REPOSITORY],
     },
-
     // ------------------------------------------------------------------
     // API layer — guards (the JWT authentication aspect)
     // ------------------------------------------------------------------
     JwtAuthGuard,
-
-
-   {
-  provide: TOKEN_SERVICE,
-  useFactory: () => {
-    const secret = process.env.JWT_SECRET;
-    const expiresIn = process.env.JWT_EXPIRES_IN;
-
-    if (!secret) {
-      throw new Error(
-        'JWT_SECRET is not defined. Check that .env is loaded before AppModule instantiates providers.',
-      );
-    }
-    // JWT_EXPIRES_IN in the .env is a human-friendly string like "7d".
-    // JwtTokenService expects a number of seconds. Convert here so the
-    // adapter stays a dumb, deterministic value receiver.
-    const expiresInSeconds = parseExpiresIn(expiresIn ?? '7d');
-
-    return new JwtTokenService(secret, expiresInSeconds);
-  },
-},
+    {
+      provide: TOKEN_SERVICE,
+      useFactory: () => {
+        const secret = process.env.JWT_SECRET;
+        const expiresIn = process.env.JWT_EXPIRES_IN;
+        if (!secret) {
+          throw new Error(
+            'JWT_SECRET is not defined. Check that .env is loaded before AppModule instantiates providers.',
+          );
+        }
+        // JWT_EXPIRES_IN in the .env is a human-friendly string like "7d".
+        // JwtTokenService expects a number of seconds. Convert here so the
+        // adapter stays a dumb, deterministic value receiver.
+        const expiresInSeconds = parseExpiresIn(expiresIn ?? '7d');
+        return new JwtTokenService(secret, expiresInSeconds);
+      },
+    },
     {
       provide: CLOCK,
       useClass: SystemClock,
@@ -201,7 +171,6 @@ function parseExpiresIn(value: string): number {
       provide: ID_GENERATOR,
       useClass: UuidGenerator,
     },
-
     // ------------------------------------------------------------------
     // Application use cases — wired via factory so they stay
     // Nest-agnostic. Parameter order MUST match each use case's
@@ -215,20 +184,11 @@ function parseExpiresIn(value: string): number {
         tokens: ITokenService,
         clock: IClock,
         ids: IIdGenerator,
-      ) => {
-        const useCase = new RegisterUserUseCase(
-          users,
-          hasher,
-          tokens,
-          clock,
-          ids,
-        );
-        return new LoggingUseCaseDecorator(
-          useCase,
+      ) =>
+        withLogging(
+          new RegisterUserUseCase(users, hasher, tokens, clock, ids),
           'RegisterUserUseCase',
-          new Logger('UseCase'),
-        );
-      },
+        ),
       inject: [
         USER_REPOSITORY,
         PASSWORD_HASHER,
@@ -243,21 +203,14 @@ function parseExpiresIn(value: string): number {
         users: IUserRepository,
         hasher: IPasswordHasher,
         tokens: ITokenService,
-      ) => {
-        const useCase = new LoginUseCase(users, hasher, tokens);
-        return new LoggingUseCaseDecorator(
-          useCase,
+      ) =>
+        withLogging(
+          new LoginUseCase(users, hasher, tokens),
           'LoginUseCase',
-          new Logger('UseCase'),
-        );
-      },
+        ),
       inject: [USER_REPOSITORY, PASSWORD_HASHER, TOKEN_SERVICE],
     },
   ],
-  exports: [
-    RegisterUserUseCase,
-    LoginUseCase,
-    GetUserByIdUseCase,
-  ],
+  exports: [RegisterUserUseCase, LoginUseCase, GetUserByIdUseCase],
 })
 export class AppModule {}
