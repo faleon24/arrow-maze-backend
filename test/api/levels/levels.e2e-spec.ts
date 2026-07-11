@@ -42,9 +42,9 @@ describe('Levels endpoints (e2e)', () => {
 
   const buildBoard = (): BoardLayout =>
     new BoardLayout(3, 3, [
-      new CellInfo('0,0', 'START'),
+      new CellInfo('0,0', 'EMPTY'),
       new CellInfo('1,1', 'ARROW', 'DOWN'),
-      new CellInfo('2,2', 'EXIT'),
+      new CellInfo('2,2', 'EMPTY'),
     ]);
 
   const buildLevel = (
