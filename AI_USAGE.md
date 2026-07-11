@@ -772,6 +772,46 @@ This document tracks the use of AI tools throughout the development of the Arrow
 - The composition root broke twice while wiring, and each time Nest's error named the exact cause: first a provider (LEVEL_REPOSITORY) was accidentally replaced instead of appended, then the two progress use-case providers were missing. Reading the "can't resolve dependencies of X" message and confirming with grep — instead of guessing at a malformed block — found each fix quickly. A wrong early hypothesis (a broken brace) was discarded once the actual providers array was inspected.
 - Idempotency belongs in the schema, not just the code: the @@unique([userId, levelId]) constraint is what guarantees a replayed submission updates one row rather than duplicating it, and the integration test proves it against a real database.
 
+## Entry 24 — Phase 0 backend hardening: audit fixes and cross-cutting refactors
+**Date**: 2026-07-11
+**Tool**: Claude Opus 4.8 (via claude.ai)
+**Task**: Before starting the v2 breaking-change work (arrow-path domain, server-authoritative scoring, wallet/economy), the backend needed a sanitization pass to close every open finding in AUDIT-Backend.md and eliminate three cross-cutting smells that would only get worse as the surface grew. Worked across two sessions, ships eight sub-blocks plus two pre-existing debts that surfaced along the way, and closes Phase 0.A of PLAN-MASTER end to end.
+**Prompt (paraphrased)**: I asked Claude to work in the smallest verifiable sub-blocks possible — one audit finding or one refactor per commit, each with its own tsc/tests/commit cycle — so that regressions would surface with a single suspect and the git history would double as a defense narrative. Strategic framing was mine: the v2 refactor is heavy, breaking, and cross-repo, so the launchpad had to be clean before we touched it. Claude's role each round was to propose the exact minimal edit, wait for confirmation of green tests, then move on.
+**Result**: Five audit fixes, three refactors, and two chores that surfaced when the refactors ran suites nobody had touched in weeks:
+- **0.A.1 — displayName whitespace → 400**: `@Matches(/\S/)` on RegisterUserDto plus a dedicated DTO spec (4 tests) that verifies whitespace-only, missing, and valid inputs at the pipe boundary. Cost: one decorator, one file. Value: no more 500s for a bad string.
+- **0.A.2 — register race → 409**: PostgresUserRepository.save wrapped in a try/catch that maps Prisma's `P2002` unique-violation to `EmailAlreadyRegisteredError`. Closes the check-then-act window between the use case's existence check and the insert.
+- **0.A.3 — `@updatedAt` on ProgressEntry**: schema-only change; no SQL migration is generated (it is a Prisma client directive), so a `prisma generate` was enough. Confirmed by rerunning the progress integration spec.
+- **0.A.4 — `.env.example`**: placeholders for DATABASE_URL, JWT_SECRET, JWT_EXPIRES_IN, PORT, ADMIN_API_KEY, with `!.env.example` added to `.gitignore` so future secrets never overwrite the template.
+- **0.A.5 — main.ts hardening**: `app.enableShutdownHooks()` so SIGTERM/SIGINT drain Prisma cleanly, plus an explicit `bootstrap().catch(err => { console.error(...); process.exit(1); })` so a missing JWT_SECRET or a busy port dies loud instead of a floating rejection. Verified by booting with `JWT_SECRET=` and with the port taken.
+- **Chore — level integration spec migrated to ARROW/EMPTY**: pre-existing debt. The previous session's `START/WALL/EXIT → ARROW/EMPTY` refactor had updated domain + unit tests + seed but never touched the level integration spec; nobody had run `test:integration` since. Migrated `buildBoard`, seven tests recovered.
+- **0.A.6 — `@CurrentUserId()` param decorator**: created `src/api/common/decorators/current-user-id.decorator.ts` and killed the triplicated `(request as Request & { userId: string }).userId` cast in AuthController.me, ProgressController.get, and ProgressController.submit. The decorator hides the JwtAuthGuard's contract from the handlers and reads like intent.
+- **0.A.8 — `configureApp(app)` extracted**: `src/configure-app.ts` now owns CORS, global prefix, ValidationPipe, DomainExceptionFilter, LoggingInterceptor, and shutdown hooks — one source of truth for cross-cutting config. main.ts calls it; all three e2e specs call it. Before this, the specs mirrored main.ts by hand and had already drifted (interceptor and CORS missing). Running the e2e suite from `main.ts`'s perspective for the first time in weeks (a side-effect of this refactor) surfaced five failing tests in the levels e2e spec — the same `START/WALL/EXIT` debt as the integration one, but hiding in the e2e layer.
+- **Chore — levels e2e spec migrated to ARROW/EMPTY**: five tests recovered.
+- **0.A.7 — `withLogging` helper**: collapsed six identical `new LoggingUseCaseDecorator(new XUseCase(...), 'XUseCase', new Logger('UseCase'))` blocks in AppModule into `withLogging(new XUseCase(...), 'XUseCase')`. Generic in `<C, R>` so each use case keeps its typed command/result signatures through the wrap. OCP applied to the composition root itself: swapping in a metrics decorator or a structured logger now touches one line, not six.
+
+Final baseline after the block: 220 unit / 21 integration / 25 e2e, all green. Nine commits shipped, all Conventional Commits, all pushed to origin/main.
+**Files affected**:
+- `src/api/auth/dto/register-user.dto.ts` (`@Matches`), `test/api/auth/dto/register-user.dto.spec.ts` (new, 4 tests)
+- `src/infrastructure/persistence/postgres-user.repository.ts` (P2002 catch), `test/infrastructure/persistence/postgres-user.repository.integration-spec.ts` (race case)
+- `prisma/schema.prisma` (`@updatedAt`)
+- `.env.example` (new), `.gitignore`
+- `src/main.ts` (shutdown hooks + bootstrap catch; then rewritten to delegate to `configureApp`)
+- `src/api/common/decorators/current-user-id.decorator.ts` (new)
+- `src/api/auth/auth.controller.ts`, `src/api/progress/progress.controller.ts` (adopt `@CurrentUserId`)
+- `src/configure-app.ts` (new)
+- `test/api/auth/auth.e2e-spec.ts`, `test/api/progress/progress.e2e-spec.ts`, `test/api/levels/levels.e2e-spec.ts` (call `configureApp`; last two also for the ARROW/EMPTY chore)
+- `test/infrastructure/persistence/postgres-level.repository.integration-spec.ts` (ARROW/EMPTY chore)
+- `src/app.module.ts` (`withLogging`)
+**Modifications made by the developer**:
+- Set the sub-block cadence and enforced it: one edit, one tsc/tests cycle, one commit, no batching until proven necessary. Nine commits across two sessions, all Conventional, all pushed granularly.
+- Diagnosed a VS Code paste-fantasma bug that ate a full edit and burned thirty minutes chasing a stack trace that pointed at the "fixed" line. Recovered by piping the file body through `cat > path << 'EOF' ... EOF` in the terminal — now the fallback whenever a paste's outcome is uncertain.
+- When 0.A.8 revealed five e2e failures, refused to move on until we ran `git stash` + retest to isolate whether they were regression or pre-existing debt. They were debt (stash-red, unstash-red), and only then did we commit 0.A.8 and open the chore separately.
+- Questioned whether the new param decorator belonged in `application/` alongside `LoggingUseCaseDecorator`. Correct instinct on a real distinction: one is a NestJS param decorator (framework), the other is a GoF Decorator (framework-agnostic). Both files are named `.decorator.ts` but they live in different layers by design.
+- Verified each phase against real output before advancing: `git log --oneline`, three-suite tail summaries, `brew services list | grep postgresql`. No claimed-green counts trusted without the Jest banner behind them.
+**Lessons learned**:
+- **Refactors surface debt for free**. `configureApp` was proposed to remove duplication; running `test:e2e` from `main.ts`'s pipeline for the first time in weeks turned up five failing tests that had been rotting since the cell-model refactor. The refactor paid for itself before the commit landed.
+- **Verify at every suite boundary after a domain change**. The previous session's `START/WALL/EXIT → ARROW/EMPTY` refactor updated domain + unit tests +
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
