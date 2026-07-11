@@ -1,12 +1,12 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
-
 import { AppModule } from '../../../src/app.module';
-import { DomainExceptionFilter } from '../../../src/api/filters/domain-exception.filter';
+import { configureApp } from '../../../src/configure-app';
 import { PrismaService } from '../../../src/infrastructure/persistence/prisma.service';
 import { DatabaseCleaner } from '../../infrastructure/helpers/database-cleaner';
+
 
 /**
  * End-to-end tests for the authentication endpoints.
@@ -44,18 +44,7 @@ describe('Auth endpoints (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-
-    // Mirror main.ts so the app under test behaves like production.
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-    app.useGlobalFilters(new DomainExceptionFilter());
-
+    configureApp(app);
     await app.init();
 
     prisma = moduleRef.get(PrismaService);
