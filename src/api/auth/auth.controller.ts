@@ -5,7 +5,6 @@ import {
   HttpCode,
   HttpStatus,
   Post,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -14,18 +13,15 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Request } from 'express';
-
 import { GetUserByIdUseCase } from '../../application/usecases/auth/get-user-by-id.usecase';
 import { LoginUseCase } from '../../application/usecases/auth/login.usecase';
 import { RegisterUserUseCase } from '../../application/usecases/auth/register-user.usecase';
-
+import { CurrentUserId } from '../common/decorators/current-user-id.decorator';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { AuthTokenResponseDto } from './dto/auth-token-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterUserDto } from './dto/register-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
-
 /**
  * AuthController — HTTP entry point for authentication endpoints.
  *
@@ -38,7 +34,9 @@ import { UserResponseDto } from './dto/user-response.dto';
  * No business logic, no try/catch. Error mapping to HTTP status
  * codes lives in the global DomainExceptionFilter. Authentication
  * on protected routes is handled by the JwtAuthGuard aspect, not
- * by code inside the handlers.
+ * by code inside the handlers. The user's id, when needed, is
+ * surfaced by the @CurrentUserId() param decorator so the handler
+ * never touches the raw Request object.
  */
 @ApiTags('auth')
 @Controller('auth')
@@ -48,7 +46,6 @@ export class AuthController {
     private readonly login: LoginUseCase,
     private readonly getUserById: GetUserByIdUseCase,
   ) {}
-
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -78,7 +75,6 @@ export class AuthController {
     });
     return AuthTokenResponseDto.from(token);
   }
-
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -108,7 +104,6 @@ export class AuthController {
     });
     return AuthTokenResponseDto.from(token);
   }
-
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -127,10 +122,9 @@ export class AuthController {
     status: HttpStatus.UNAUTHORIZED,
     description: 'Missing, malformed, or expired token.',
   })
-  async me(@Req() request: Request): Promise<UserResponseDto> {
-    // The JwtAuthGuard has already verified the token and attached
-    // the userId. The controller trusts that invariant.
-    const userId = (request as Request & { userId: string }).userId;
+  async me(@CurrentUserId() userId: string): Promise<UserResponseDto> {
+    // JwtAuthGuard has already verified the token and attached the
+    // userId; @CurrentUserId() surfaces it as a typed parameter.
     const user = await this.getUserById.execute({ userId });
     return UserResponseDto.from(user);
   }

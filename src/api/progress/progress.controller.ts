@@ -5,7 +5,6 @@ import {
   HttpCode,
   HttpStatus,
   Post,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -14,22 +13,20 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Request } from 'express';
-
 import { SubmitScoreUseCase } from '../../application/usecases/progress/submit-score.usecase';
 import { GetProgressUseCase } from '../../application/usecases/progress/get-progress.usecase';
+import { CurrentUserId } from '../common/decorators/current-user-id.decorator';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { SubmitScoreDto } from './dto/submit-score.dto';
 import { ProgressResponseDto } from './dto/progress-response.dto';
-
 /**
  * ProgressController — HTTP entry point for a player's progress.
  *
  * Both routes are protected by JwtAuthGuard: the player's identity
  * comes from the verified token, never from the request body or a URL
- * param. The controller reads request.userId (attached by the guard)
- * and passes it into the use case — a player can only ever read or
- * write their own progress.
+ * param. @CurrentUserId() surfaces the userId the guard attached, so
+ * the controller never touches the raw Request object — a player can
+ * only ever read or write their own progress.
  *
  * Thin by design, like AuthController: translate, delegate, map. No
  * business logic, no try/catch.
@@ -43,7 +40,6 @@ export class ProgressController {
     private readonly submitScore: SubmitScoreUseCase,
     private readonly getProgress: GetProgressUseCase,
   ) {}
-
   @Get()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -61,12 +57,10 @@ export class ProgressController {
     status: HttpStatus.UNAUTHORIZED,
     description: 'Missing, malformed, or expired token.',
   })
-  async get(@Req() request: Request): Promise<ProgressResponseDto> {
-    const userId = (request as Request & { userId: string }).userId;
+  async get(@CurrentUserId() userId: string): Promise<ProgressResponseDto> {
     const progress = await this.getProgress.execute({ userId });
     return ProgressResponseDto.from(progress);
   }
-
   @Post()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -89,10 +83,9 @@ export class ProgressController {
     description: 'Missing, malformed, or expired token.',
   })
   async submit(
-    @Req() request: Request,
+    @CurrentUserId() userId: string,
     @Body() dto: SubmitScoreDto,
   ): Promise<ProgressResponseDto> {
-    const userId = (request as Request & { userId: string }).userId;
     const progress = await this.submitScore.execute({
       userId,
       levelId: dto.levelId,
