@@ -1,11 +1,9 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 
 import { AppModule } from '../../../src/app.module';
-import { DomainExceptionFilter } from '../../../src/api/filters/domain-exception.filter';
-import { PrismaService } from '../../../src/infrastructure/persistence/prisma.service';
+import { configureApp } from '../../../src/configure-app';import { PrismaService } from '../../../src/infrastructure/persistence/prisma.service';
 import { PostgresLevelRepository } from '../../../src/infrastructure/persistence/postgres-level.repository';
 import { DatabaseCleaner } from '../../infrastructure/helpers/database-cleaner';
 
@@ -70,19 +68,8 @@ describe('Levels endpoints (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleRef.createNestApplication();
-
-    // Mirror main.ts so the app under test behaves like production.
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-    app.useGlobalFilters(new DomainExceptionFilter());
-
+   app = moduleRef.createNestApplication();
+    configureApp(app);
     await app.init();
 
     prisma = moduleRef.get(PrismaService);
