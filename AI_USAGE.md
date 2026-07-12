@@ -812,6 +812,95 @@ Final baseline after the block: 220 unit / 21 integration / 25 e2e, all green. N
 - **Refactors surface debt for free**. `configureApp` was proposed to remove duplication; running `test:e2e` from `main.ts`'s pipeline for the first time in weeks turned up five failing tests that had been rotting since the cell-model refactor. The refactor paid for itself before the commit landed.
 - **Verify at every suite boundary after a domain change**. The previous session's `START/WALL/EXIT → ARROW/EMPTY` refactor updated domain + unit tests +
 
+
+## Entry 25 — Phase 1+2+3 backend: v2 arrow-path domain, persistence, and server-authoritative scoring
+
+**Date**: 2026-07-11
+
+**Tool**: Claude Opus 4.8 (via claude.ai)
+
+**Task**: With Phase 0.A closed and the launchpad clean, the backend crossed into the v2 breaking-change window. Three phases collapsed into one long sprint on the `feature/v2-domain` branch: replace the cell-typed board with an arrow-path model, migrate persistence + API + seed to the new shape, and move stars-per-level computation from the client to the server so the app cannot bribe its own scoreboard. Fourteen granular commits, three test suites re-green, one branch held off `main` until the app catches up.
+
+**Prompt (paraphrased)**: I asked Claude to run each phase as an ordered chain of sub-blocks — one domain concept per commit, one persistence layer per commit, one behavioral change per commit — with tsc + tests green at every step. Strategic framing was mine: the app is going to eat this contract change too, so the backend needs to be surgical, well-tested, and reversible until we merge coordinated with the app. Claude's role each round was to propose the minimal edit for the next block, wait for green, then move on. Where a Prisma or Nest quirk surfaced, we stopped and diagnosed before proceeding.
+
+**Result**: Phase 1 built the v2 domain from scratch; Phase 2 migrated persistence, API, and seed to serve it; Phase 3 pulled server-authoritative scoring behind a validated DTO.
+
+Phase 1 — v2 arrow-path domain (5 commits):
+
+- **1.1 — `arrow-path-info` VO**: `src/domain/models/arrow-path-info.ts` with `id`, `color` (whitelisted string), `direction`, `cells: Position[]`, `head` derived from `cells.at(-1)`. Spec covers construction and equality with 20 tests; structural invariants (contiguity, direction alignment) are deferred to the board layer where they belong.
+- **1.2 — `collectible-info` VO**: `src/domain/models/collectible-info.ts` with `position` and `kind` whitelisted against `KNOWN_KINDS = ['STAR']`. Spec covers construction and rejection of unknown kinds.
+- **1.3 — Arrow-path `BoardLayout`**: rewritten to hold arrows/walls/collectibles plus an occupancy check that rejects overlaps at construction. `Level` gained `timeLimitMs`. `CellInfo` v1 and its tests were deleted in the same commit; the only downstream consumer, the `list-levels` use case spec, was migrated in a follow-up commit (1.5). Between 1.3 and 1.5 the spec was red — accepted as a bounded intermediate red, closed before phase 1 ended.
+- **1.4 — `board-solver` service**: `src/domain/services/board-solver.ts` decides whether an arrangement of arrow-paths admits a clearing order. Greedy with monotony: on each pass, find any activatable arrow (ray to the edge is clear of walls and foreign arrows), clear it, repeat until either no arrow can fire (unsolvable) or all arrows are gone (solvable). O(arrows²) per pass, fine for the board sizes shipped.
+- **1.5 — Invariants + solver specs and use case migration**: 3 new specs (`board-layout`, `level`, `board-solver`) plus the migration of `list-levels` usecase spec that had been referencing `CellInfo`. Phase 1 baseline green.
+
+Phase 2 — persistence + API v2 (7 commits):
+
+- **2.1 — `schema.prisma` board v2 columns and progress FKs**: `arrows: Json`, `walls: Json`, `collectibles: Json`, `timeLimitMs: Int?` on the Level table. FKs on `ProgressEntry.user` and `ProgressEntry.level` so orphaned progress rows are impossible at the database level. Seed migrated to v2 shape.
+- **2.2 — SQL migration**: `prisma/migrations/…_board_v2_columns_and_progress_fks/migration.sql`. First `migrate dev` attempt failed because the dev DB held populated `Level` rows and the new required columns had no default. Resolved with `migrate reset --force --skip-seed`, then re-ran `migrate dev` against the empty schema.
+- **2.3 — Level mapper v2**: mapper writes the three JSON columns and reads them back into `BoardLayout` v2 via the domain constructor (which re-validates). The `Omit<LevelPersistenceRow, 'createdAt'>` type smell from the amended repo was closed in the same commit — the mapper's return type no longer promises a field the repo never touches.
+- **2.4 — API v2**: `LevelResponseDto` emits `version: 2`, `arrows`, `walls`, `collectibles`, `timeLimitMs`. Old `cells` field dropped. Levels endpoint contract is now v2 end-to-end.
+- **2.5 — Progress `$transaction`**: `PostgresProgressRepository.save` was reading then upserting. Collapsed to a single `$transaction` with just the upsert; the read was redundant because the repo already returned the domain object. One round-trip saved per submission. This commit also picked up the progress integration spec's `beforeEach` seeding of `User` + `Level` to satisfy the new FKs — bundled here rather than with 2.6 because the fold that reconciled a duplicated commit (see Modifications) landed the spec change alongside the perf change.
+- **2.6 — Integration specs migrated**: 3 tests (level integration, levels e2e, user integration) updated to the v2 board shape. `DatabaseCleaner`'s `TRUNCATE CASCADE` handled the reverse-order deletion imposed by the new FKs for free.
+
+Phase 3 — server-authoritative scoring (2 commits):
+
+- **3.1 — Rename `starsFromScore` → `starsFor(timeMs)`**: previously the method took a score value and worked backwards; now it takes `timeMs` and computes stars against the level's `timeLimitMs` directly. Grepped five call sites, updated all in the same commit.
+- **3.2 — Server-computed stars + level existence validation**: `SubmitScoreDto` no longer accepts a `stars` field (the whitelist ValidationPipe rejects it as an extra property) and adds `@IsUUID('4')` on `levelId`. `SubmitScoreCommand` mirrors the DTO. `SubmitScoreUseCase` injects `ILevelRepository`, throws `LevelNotFoundError` if the level is missing or unpublished, and computes stars server-side. Controller + AppModule wired. Tests updated: unit specs adapted, e2e added three cases — `400 stars-forbidden` when the client tries to inject a stars value, `400 non-uuid` when the id is malformed, `404 level-missing` when the level doesn't exist.
+
+Final baseline after the block: 258 unit / 21 integration / 27 e2e, all green. Fourteen commits shipped on `feature/v2-domain`, all Conventional Commits, none pushed to `main` yet — the branch is held until the app's Fase 4 lands so both repos merge on the same day.
+
+**Files affected**:
+- `src/domain/models/arrow-path-info.ts`, `.spec.ts` (new)
+- `src/domain/models/collectible-info.ts`, `.spec.ts` (new)
+- `src/domain/models/board-layout.ts`, `.spec.ts` (rewritten to v2)
+- `src/domain/models/level.ts`, `.spec.ts` (`timeLimitMs`)
+- `src/domain/models/cell-info.ts` (deleted), `.spec.ts` (deleted)
+- `src/domain/services/board-solver.ts`, `.spec.ts` (new)
+- `src/application/use-cases/list-levels.use-case.spec.ts` (migrated off `CellInfo`)
+- `prisma/schema.prisma` (board v2 columns, FKs)
+- `prisma/seed.ts` (v2 seed shape)
+- `prisma/migrations/…_board_v2_columns_and_progress_fks/migration.sql` (new)
+- `src/infrastructure/persistence/level.mapper.ts` (v2 columns + `Omit` fix)
+- `src/infrastructure/persistence/postgres-level.repository.ts` (mapper alignment)
+- `src/api/levels/dto/level-response.dto.ts` (v2 payload)
+- `src/infrastructure/persistence/postgres-progress.repository.ts` (`$transaction`)
+- `test/infrastructure/persistence/postgres-progress.repository.integration-spec.ts` (User + Level seed in `beforeEach`)
+- `test/infrastructure/persistence/postgres-level.repository.integration-spec.ts` (v2)
+- `test/api/levels/levels.e2e-spec.ts` (v2 response contract)
+- `test/infrastructure/persistence/postgres-user.repository.integration-spec.ts` (FK-safe seeding)
+- `src/domain/services/scoring.service.ts` (`starsFor(timeMs)`)
+- `src/api/progress/dto/submit-score.dto.ts` (`@IsUUID('4')`, no `stars`)
+- `src/application/commands/submit-score.command.ts` (no `stars`)
+- `src/application/use-cases/submit-score.use-case.ts` (inject `ILevelRepository`, compute stars, throw `LevelNotFoundError`)
+- `src/api/progress/progress.controller.ts` (wire)
+- `src/app.module.ts` (wire)
+- `test/application/use-cases/submit-score.use-case.spec.ts` (migrated)
+- `test/api/progress/progress.e2e-spec.ts` (3 new cases)
+
+**Modifications made by the developer**:
+- Held the branch off `main`. The temptation to fast-forward each phase to `main` was real — three green suites feel deployable — but the app still speaks v1. A merge without a coordinated app-side v2 landing would break every install in seconds. `main` stays on `origin/main` @ `1731da1` until the app is ready.
+- Diagnosed the `migrate dev` failure on populated tables and pushed the reset-then-migrate workflow: `migrate reset --force --skip-seed`, then `migrate dev`, then reseed. Documented the gotcha so it doesn't cost thirty minutes next time.
+- Discovered that `migrate dev` reads only `.env`, not `.env.test`, so the test DB stayed on the v1 schema after the migration. Two options landed: `npx dotenv -e .env.test -- npx prisma migrate deploy` if `dotenv-cli` is installed, or an inline export/unset dance around `migrate deploy` if it isn't. Both are safe reruns.
+- Flagged non-canonical UUIDs in `prisma/seed.ts` as debt. `'00000000-0000-0000-0000-00000000000X'` is not a valid v4 UUID (the third group must start with `4`, the fourth with `8/9/a/b`). Not blocking today because the seed bypasses DTO validation, but `@IsUUID('4')` on Phase 6 admin upsert or Phase 8 fifteen-level seed will hit them. Scheduled for regeneration when those phases land.
+- Enforced grep-before-rename on `starsFromScore` → `starsFor`. Five call sites across `src/` and `test/`; all migrated in the same commit. Kept the rename atomic rather than a rename plus a chain of fix-ups.
+- Diagnosed the Prisma client cache confusion: after `schema.prisma` changed, TSC saw the mapper trying to write columns the client still typed as v1 and reported `Object literal may only specify known properties`. Fix: rerun `prisma generate` (or `migrate dev`, which does it as a side-effect). Rebuild the client whenever the schema changes; treat it like a compile step.
+- Verified test suites at every layer boundary. When the FK migration landed, ran unit + integration + e2e before touching the next block, on the theory that a single quiet FK error would cascade through a week of blocks. Caught the missing `User + Level` seed in the progress integration spec at the first block after the FK, not five commits later.
+- Reconciled the branch history after a stray `git commit --amend` on the perf(progress) block landed as a new commit (same message) rather than an amend, leaving the branch with two identical `perf(progress)` commits and the progress integration spec's FK seeding stranded in the wrong one. Cleanup was manual and surgical: reset to the earlier of the two, `git checkout <later-sha> -- <two files>` to bring the delta forward as a staged change, `git commit --amend --no-edit` to fold it in, then a chain of `git cherry-pick` to replay everything downstream. Kept a `backup-pre-squash` branch pointer as a safety net for the full duration and deleted it only after the force-push landed and all three suites re-verified. The rewritten history reflects the intended shape of the sprint; the spec change riding with `perf(progress)` rather than `test(persistence)` is the one deviation from the ideal per-phase grouping.
+- Continued the paste-fantasma discipline. VS Code's paste-eating bug surfaced twice this session. Recovery protocol solidified: `Cmd+A → Delete → Save → wc -l == 0 → paste → Save → head -3 verify`. When even that failed on a long JSON payload, `pbpaste > path` from the terminal after copying pure content to the clipboard.
+
+**Lessons learned**:
+- **A `feature/` branch is a discount contract**. Holding `feature/v2-domain` off `main` costs nothing operationally — the CI runs, the tests are green, the diff is legible in one click. It buys a coordinated cross-repo landing when the app is ready. Merging early would trade seconds of momentum for a broken production install.
+- **Deleting v1 and its tests in one commit works when the deleted symbols are truly local**. `CellInfo` was referenced by four files: two tests deleted alongside it, one spec migrated in a follow-up commit, one use case that never named `CellInfo` directly (it worked through `BoardLayout`). Grep confirmed the surface area before the commit landed. For symbols with wider reach, prefer a coexistence approach.
+- **Foreign keys are the cheapest data-integrity contract we can add**. Two constraints on `ProgressEntry` cost one migration and one `beforeEach` block per affected test. In return, orphaned progress rows are impossible at the database level, and any use case that tries to write one gets a `P2003` error at the seam instead of a silent corruption downstream.
+- **Server-authoritative scoring is a two-sided edit**. The DTO change (no `stars`) is small; the client contract change is larger, because the app now has to trust the server's stars in the response. Split responsibility clearly: the server owns "how many stars did this run earn" and the app owns "show that number". The e2e test that rejects `stars` in the request body encodes the contract more precisely than any comment could.
+- **`@IsUUID('4')` is strict enough to catch stale test fixtures**. Once the DTO validator was in place, the twelve `'00000000-…-0000'` ids in `seed.ts` became a scheduled hazard. Better to catch that at Phase 6/8 with a red admin-upsert test than at prod deploy with a silent seed regression.
+- **A single Prisma `$transaction` is worth the extra character**. The redundant read-then-write in `PostgresProgressRepository.save` was legible but slower. Wrapping the upsert in `$transaction` costs one line and saves a round-trip per submission — meaningful when a level completion fires exactly this call and users care about that moment feeling snappy.
+- **Interactive rebase for a fixup is not the only way in; sometimes reset + selective checkout + cherry-pick is faster and safer**. When `git rebase -i` gets into a confused state (a prior aborted rebase leaves stale `.git/rebase-merge/` state, or the sequence-editor doesn't fire, or a conflict surprises you at commit-one), the reflex to "just re-rebase" can compound the mess. Falling back to reset + `checkout <sha> -- <files>` + amend + cherry-pick chain lets each step be observable, reversible, and cheaply verified against a `backup-` branch pointer. Two extra commands, a lot less risk.
+
+
+
+
+
 ## Critical evaluation (in progress)
 
 This section will be updated at the end of the project with:
