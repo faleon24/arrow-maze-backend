@@ -58,14 +58,14 @@ describe('DifficultyProfile', () => {
     });
   });
 
-  describe('starsFromScore', () => {
+  describe('starsFor', () => {
     it('should_award_three_stars_when_finished_fast_on_easy', () => {
       // Arrange
       const easy = new EasyProfile();
       const fastRun = scoreWithTime(60_000); // under the 2 min threshold
 
       // Act
-      const stars = easy.starsFromScore(fastRun);
+      const stars = easy.starsFor(fastRun.timeMs);
 
       // Assert
       expect(stars).toBe(3);
@@ -77,7 +77,7 @@ describe('DifficultyProfile', () => {
       const slowRun = scoreWithTime(600_000); // 10 min, well over any threshold
 
       // Act
-      const stars = hard.starsFromScore(slowRun);
+      const stars = hard.starsFor(slowRun.timeMs);
 
       // Assert
       expect(stars).toBe(1);
@@ -90,8 +90,8 @@ describe('DifficultyProfile', () => {
       const hard = new HardProfile();
 
       // Act
-      const starsOnEasy = easy.starsFromScore(run);
-      const starsOnHard = hard.starsFromScore(run);
+      const starsOnEasy = easy.starsFor(run.timeMs);
+      const starsOnHard = hard.starsFor(run.timeMs);
 
       // Assert
       expect(starsOnEasy).toBeGreaterThan(starsOnHard);
