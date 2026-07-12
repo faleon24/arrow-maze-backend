@@ -3,7 +3,7 @@ import { PostgresLevelRepository } from '../../../src/infrastructure/persistence
 import { PrismaService } from '../../../src/infrastructure/persistence/prisma.service';
 import { Level } from '../../../src/domain/models/level';
 import { BoardLayout } from '../../../src/domain/models/board-layout';
-import { CellInfo } from '../../../src/domain/models/cell-info';
+import { ArrowPathInfo } from '../../../src/domain/models/arrow-path-info';
 import {
   DifficultyProfile,
   EasyProfile,
@@ -11,36 +11,34 @@ import {
   MediumProfile,
 } from '../../../src/domain/models/difficulty-profile';
 import { DatabaseCleaner } from '../helpers/database-cleaner';
-
 /**
- * Integration tests for PostgresLevelRepository.
+ * Integration tests for PostgresLevelRepository (v2).
  *
  * Exercises the adapter against a REAL PostgreSQL instance
  * (arrowmaze_test). No mocks. The point is to prove that the queries,
  * the LevelMapper, the DifficultyProfileFactory, and the schema all
  * agree — in particular that a difficulty label survives a round-trip
  * through the database and comes back as the correct DifficultyProfile
- * strategy, and that the board JSON serializes and deserializes without
- * loss (arrow directions included).
+ * strategy, and that the v2 board JSON (arrows/walls/collectibles)
+ * serializes and deserializes without loss.
  *
- * Note on cell types:
- *   The domain was refactored to a two-type model (EMPTY, ARROW) — the
- *   maze-era START/WALL/EXIT are gone. buildBoard here uses one arrow
- *   plus two empty cells; BoardLayout requires at least one arrow, and
- *   the round-trip test asserts that the arrow direction survives.
+ * Note on the board model:
+ *   The domain runs the v2 arrow-path model — arrows are polylines of
+ *   cells with a color, id, and direction. buildBoard uses a minimal
+ *   single-cell arrow (the degenerate polyline that reproduces v1
+ *   behaviour) so the round-trip test proves that id, color, cells
+ *   and direction all survive Postgres.
  */
 describe('PostgresLevelRepository (integration)', () => {
   let prisma: PrismaService;
   let repository: PostgresLevelRepository;
   let cleaner: DatabaseCleaner;
-
   const buildBoard = (): BoardLayout =>
-    new BoardLayout(3, 3, [
-      new CellInfo('0,0', 'EMPTY'),
-      new CellInfo('1,1', 'ARROW', 'DOWN'),
-      new CellInfo('2,2', 'EMPTY'),
-    ]);
-
+    new BoardLayout({
+      rows: 3,
+      cols: 3,
+      arrows: [new ArrowPathInfo('a1', 'PINK', ['1,1'], 'DOWN')],
+    });
   const buildValidLevel = (
     overrides: Partial<{
       id: string;
@@ -58,31 +56,24 @@ describe('PostgresLevelRepository (integration)', () => {
       parTimeMs: overrides.parTimeMs ?? 120_000,
       published: overrides.published ?? true,
     });
-
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
     repository = new PostgresLevelRepository(prisma);
     cleaner = new DatabaseCleaner(prisma as unknown as PrismaClient);
   });
-
   afterEach(async () => {
     await cleaner.cleanAll();
   });
-
   afterAll(async () => {
     await prisma.$disconnect();
   });
-
-  // -------- findById --------
-
   describe('findById', () => {
     it('should_return_null_when_level_does_not_exist', async () => {
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
       const result = await repository.findById(nonExistentId);
       expect(result).toBeNull();
     });
-
     it('should_return_Level_when_level_exists', async () => {
       const level = buildValidLevel();
       await repository.save(level);
@@ -92,9 +83,6 @@ describe('PostgresLevelRepository (integration)', () => {
       expect(result!.id).toBe(level.id);
     });
   });
-
-  // -------- findAllPublished --------
-
   describe('findAllPublished', () => {
     it('should_return_only_published_levels_ordered_by_index', async () => {
       await repository.save(
@@ -118,13 +106,10 @@ describe('PostgresLevelRepository (integration)', () => {
           published: true,
         }),
       );
-
       const result = await repository.findAllPublished();
-
       expect(result).toHaveLength(3);
       expect(result.map((l) => l.index)).toEqual([0, 1, 2]);
     });
-
     it('should_exclude_unpublished_levels', async () => {
       await repository.save(
         buildValidLevel({
@@ -140,16 +125,11 @@ describe('PostgresLevelRepository (integration)', () => {
           published: false,
         }),
       );
-
       const result = await repository.findAllPublished();
-
       expect(result).toHaveLength(1);
       expect(result[0].published).toBe(true);
     });
   });
-
-  // -------- findAll --------
-
   describe('findAll', () => {
     it('should_return_every_level_including_drafts', async () => {
       await repository.save(
@@ -166,31 +146,20 @@ describe('PostgresLevelRepository (integration)', () => {
           published: false,
         }),
       );
-
       const result = await repository.findAll();
-
       expect(result).toHaveLength(2);
     });
   });
-
-  // -------- save (update path) --------
-
   describe('save (update path)', () => {
     it('should_publish_an_existing_level_when_saved_as_published', async () => {
       const draft = buildValidLevel({ published: false });
       await repository.save(draft);
-
       const published = buildValidLevel({ published: true });
-
       await repository.save(published);
-
       const fetched = await repository.findById(draft.id);
       expect(fetched!.published).toBe(true);
     });
   });
-
-  // -------- Factory Method materialization --------
-
   describe('difficulty round-trip (Factory Method)', () => {
     it('should_rebuild_the_matching_profile_when_reading_each_difficulty', async () => {
       const cases: Array<[string, number, DifficultyProfile, Function]> = [
@@ -201,23 +170,17 @@ describe('PostgresLevelRepository (integration)', () => {
       for (const [id, index, difficulty] of cases) {
         await repository.save(buildValidLevel({ id, index, difficulty }));
       }
-
       for (const [id, , , ProfileClass] of cases) {
         const fetched = await repository.findById(id);
         expect(fetched!.difficulty).toBeInstanceOf(ProfileClass);
       }
     });
   });
-
-  // -------- Round-trip integrity --------
-
   describe('round-trip integrity', () => {
-    it('should_preserve_all_fields_and_the_board_through_save_and_findById', async () => {
+    it('should_preserve_all_fields_and_the_v2_board_through_save_and_findById', async () => {
       const original = buildValidLevel({ difficulty: new HardProfile() });
-
       await repository.save(original);
       const fetched = await repository.findById(original.id);
-
       expect(fetched).not.toBeNull();
       expect(fetched!.id).toBe(original.id);
       expect(fetched!.index).toBe(original.index);
@@ -226,10 +189,16 @@ describe('PostgresLevelRepository (integration)', () => {
       expect(fetched!.difficulty.label()).toBe('HARD');
       expect(fetched!.board.rows).toBe(3);
       expect(fetched!.board.cols).toBe(3);
-      expect(fetched!.board.cells).toHaveLength(3);
-      const arrow = fetched!.board.cells.find((c) => c.type === 'ARROW');
-      expect(arrow).toBeDefined();
-      expect(arrow!.direction).toBe('DOWN');
+      // v2 arrow round-trip: id, color, cells and direction all survive.
+      expect(fetched!.board.arrows).toHaveLength(1);
+      const arrow = fetched!.board.arrows[0];
+      expect(arrow.id).toBe('a1');
+      expect(arrow.color).toBe('PINK');
+      expect(arrow.cells).toEqual(['1,1']);
+      expect(arrow.direction).toBe('DOWN');
+      // Walls and collectibles default to empty in this fixture.
+      expect(fetched!.board.walls).toEqual([]);
+      expect(fetched!.board.collectibles).toEqual([]);
     });
   });
 });

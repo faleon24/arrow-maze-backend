@@ -3,8 +3,7 @@ import { PostgresLevelRepository } from '../../../src/infrastructure/persistence
 import { PrismaService } from '../../../src/infrastructure/persistence/prisma.service';
 import { Level } from '../../../src/domain/models/level';
 import { BoardLayout } from '../../../src/domain/models/board-layout';
-import { CellInfo } from '../../../src/domain/models/cell-info';
-import {
+import { ArrowPathInfo } from '../../../src/domain/models/arrow-path-info';import {
   DifficultyProfile,
   EasyProfile,
   HardProfile,
@@ -35,11 +34,11 @@ describe('PostgresLevelRepository (integration)', () => {
   let cleaner: DatabaseCleaner;
 
   const buildBoard = (): BoardLayout =>
-    new BoardLayout(3, 3, [
-      new CellInfo('0,0', 'EMPTY'),
-      new CellInfo('1,1', 'ARROW', 'DOWN'),
-      new CellInfo('2,2', 'EMPTY'),
-    ]);
+    new BoardLayout({
+      rows: 3,
+      cols: 3,
+      arrows: [new ArrowPathInfo('a1', 'PINK', ['1,1'], 'DOWN')],
+    });
 
   const buildValidLevel = (
     overrides: Partial<{
@@ -253,10 +252,8 @@ describe('PostgresLevelRepository (integration)', () => {
       expect(fetched!.difficulty.label()).toBe('HARD');
       expect(fetched!.board.rows).toBe(3);
       expect(fetched!.board.cols).toBe(3);
-      expect(fetched!.board.cells).toHaveLength(3);
-      // The arrow cell must survive with its direction intact.
-      const arrow = fetched!.board.cells.find((c) => c.type === 'ARROW');
-      expect(arrow).toBeDefined();
+      expect(fetched!.board.arrows).toHaveLength(1);      // The arrow cell must survive with its direction intact.
+      const arrow = fetched!.board.arrows[0];      expect(arrow).toBeDefined();
       expect(arrow!.direction).toBe('DOWN');
     });
   });
