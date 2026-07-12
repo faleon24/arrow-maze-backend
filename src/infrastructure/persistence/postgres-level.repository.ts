@@ -3,7 +3,6 @@ import { ILevelRepository } from '../../application/ports/out/level-repository.p
 import { Level } from '../../domain/models/level';
 import { PrismaService } from './prisma.service';
 import { LevelMapper, LevelPersistenceRow } from './level.mapper';
-
 /**
  * PostgresLevelRepository — Prisma-backed adapter for ILevelRepository.
  *
@@ -19,14 +18,12 @@ import { LevelMapper, LevelPersistenceRow } from './level.mapper';
 @Injectable()
 export class PostgresLevelRepository implements ILevelRepository {
   constructor(private readonly prisma: PrismaService) {}
-
   async findById(id: string): Promise<Level | null> {
     const row = await this.prisma.level.findUnique({ where: { id } });
     return row === null
       ? null
       : LevelMapper.toDomain(row as unknown as LevelPersistenceRow);
   }
-
   async findAll(): Promise<Level[]> {
     const rows = await this.prisma.level.findMany({
       orderBy: { index: 'asc' },
@@ -35,7 +32,6 @@ export class PostgresLevelRepository implements ILevelRepository {
       LevelMapper.toDomain(r as unknown as LevelPersistenceRow),
     );
   }
-
   async findAllPublished(): Promise<Level[]> {
     const rows = await this.prisma.level.findMany({
       where: { published: true },
@@ -45,7 +41,6 @@ export class PostgresLevelRepository implements ILevelRepository {
       LevelMapper.toDomain(r as unknown as LevelPersistenceRow),
     );
   }
-
   async save(level: Level): Promise<void> {
     const row = LevelMapper.toPersistence(level);
     await this.prisma.level.upsert({
@@ -56,8 +51,11 @@ export class PostgresLevelRepository implements ILevelRepository {
         difficulty: row.difficulty,
         rows: row.rows,
         cols: row.cols,
-        cells: row.cells as object,
+        arrows: row.arrows as object,
+        walls: row.walls as object,
+        collectibles: row.collectibles as object,
         parTimeMs: row.parTimeMs,
+        timeLimitMs: row.timeLimitMs,
         published: row.published,
         // createdAt omitted — DB default handles it on insert.
       },
@@ -66,8 +64,11 @@ export class PostgresLevelRepository implements ILevelRepository {
         difficulty: row.difficulty,
         rows: row.rows,
         cols: row.cols,
-        cells: row.cells as object,
+        arrows: row.arrows as object,
+        walls: row.walls as object,
+        collectibles: row.collectibles as object,
         parTimeMs: row.parTimeMs,
+        timeLimitMs: row.timeLimitMs,
         published: row.published,
         // createdAt intentionally omitted — it's immutable.
       },
