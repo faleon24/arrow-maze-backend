@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { IProgressRepository } from '../../application/ports/out/progress-repository.port';
 import { IIdGenerator } from '../../application/ports/out/id-generator.port';
+import { IProgressRepository } from '../../application/ports/out/progress-repository.port';
 import { PlayerProgress } from '../../domain/models/player-progress';
 import { PrismaService } from './prisma.service';
 import { ProgressMapper, ProgressEntryRow } from './progress.mapper';
-
 /**
  * PostgresProgressRepository — Prisma-backed adapter for
  * IProgressRepository.
@@ -18,6 +17,14 @@ import { ProgressMapper, ProgressEntryRow } from './progress.mapper';
  * Patterns applied:
  *   - Adapter / Repository: exposes IProgressRepository over Prisma.
  *   - DIP: use cases depend on the port, never on this class.
+ *
+ * Write path: the whole entry batch runs in a single $transaction so
+ * a partial save is impossible — if any entry fails, none apply. The
+ * previous version issued a redundant findUnique per entry to
+ * "preserve" the existing row id on update; that lookup was cosmetic
+ * (Prisma's update never touches the id, and no downstream code
+ * references it), so we now always generate an id: it lands on
+ * create, is ignored on update. One less round-trip per entry.
  */
 @Injectable()
 export class PostgresProgressRepository implements IProgressRepository {
@@ -25,40 +32,26 @@ export class PostgresProgressRepository implements IProgressRepository {
     private readonly prisma: PrismaService,
     private readonly ids: IIdGenerator,
   ) {}
-
   async findByUser(userId: string): Promise<PlayerProgress> {
     const rows = await this.prisma.progressEntry.findMany({
       where: { userId },
       orderBy: { levelId: 'asc' },
     });
-
     const entries = rows.map((r) =>
       ProgressMapper.toDomain(r as unknown as ProgressEntryRow),
     );
-
     // Always returns an aggregate — empty if the user has no rows yet.
     return new PlayerProgress(userId, entries);
   }
-
   async save(progress: PlayerProgress): Promise<void> {
-    // Upsert each entry independently, keyed by (userId, levelId). We
-    // look up the existing row's id to preserve it on update; new
-    // entries get a fresh generated id. Ordering the writes is
-    // unnecessary — entries are independent per level.
-    for (const entry of progress.entries) {
-      const existing = await this.prisma.progressEntry.findUnique({
-        where: {
-          userId_levelId: {
-            userId: progress.userId,
-            levelId: entry.levelId,
-          },
-        },
-      });
-
-      const id = existing?.id ?? this.ids.generate();
-      const row = ProgressMapper.toPersistence(progress.userId, id, entry);
-
-      await this.prisma.progressEntry.upsert({
+    if (progress.entries.length === 0) return;
+    const operations = progress.entries.map((entry) => {
+      const row = ProgressMapper.toPersistence(
+        progress.userId,
+        this.ids.generate(),
+        entry,
+      );
+      return this.prisma.progressEntry.upsert({
         where: {
           userId_levelId: {
             userId: progress.userId,
@@ -84,6 +77,7 @@ export class PostgresProgressRepository implements IProgressRepository {
           // userId/levelId are the key, never updated.
         },
       });
-    }
+    });
+    await this.prisma.$transaction(operations);
   }
 }

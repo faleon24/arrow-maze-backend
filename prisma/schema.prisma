@@ -1,39 +1,41 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
 model User {
-  id           String   @id
-  email        String   @unique
-  passwordHash String
-  displayName  String
-  createdAt    DateTime @default(now())
+  id              String          @id
+  email           String          @unique
+  passwordHash    String
+  displayName     String
+  createdAt       DateTime        @default(now())
+
+  progressEntries ProgressEntry[]
 
   @@map("users")
 }
-
 model Level {
-  id         String   @id
-  index      Int      @unique
-  difficulty String
-  rows       Int
-  cols       Int
-  cells      Json
-  parTimeMs  Int
-  published  Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  id           String          @id
+  index        Int             @unique
+  difficulty   String
+  rows         Int
+  cols         Int
+  arrows       Json
+  walls        Json
+  collectibles Json
+  parTimeMs    Int
+  timeLimitMs  Int?
+  published    Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+
+  progressEntries ProgressEntry[]
 
   @@map("levels")
 }
-
 model ProgressEntry {
   id          String   @id
   userId      String
@@ -44,6 +46,9 @@ model ProgressEntry {
   attempts    Int
   completedAt DateTime
   updatedAt   DateTime @default(now()) @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id])
+  level Level @relation(fields: [levelId], references: [id])
 
   @@unique([userId, levelId])
   @@map("progress_entries")

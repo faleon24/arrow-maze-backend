@@ -1,123 +1,123 @@
 import { Level } from '../../../src/domain/models/level';
 import { BoardLayout } from '../../../src/domain/models/board-layout';
-import { CellInfo } from '../../../src/domain/models/cell-info';
+import { ArrowPathInfo } from '../../../src/domain/models/arrow-path-info';
 import {
-  DifficultyProfile,
   EasyProfile,
   HardProfile,
 } from '../../../src/domain/models/difficulty-profile';
-
-function buildBoard(): BoardLayout {
-  return new BoardLayout(3, 3, [
-    new CellInfo('0,0', 'ARROW', 'RIGHT'),
-    new CellInfo('2,2', 'ARROW', 'LEFT'),
-  ]);
-}
-
-function buildLevel(
-  overrides: Partial<{
-    id: string;
-    index: number;
-    difficulty: DifficultyProfile;
-    board: BoardLayout;
-    parTimeMs: number;
-    published: boolean;
-  }> = {},
-): Level {
-  return new Level({
-    id: overrides.id ?? 'level-1',
-    index: overrides.index ?? 0,
-    difficulty: overrides.difficulty ?? new EasyProfile(),
-    board: overrides.board ?? buildBoard(),
-    parTimeMs: overrides.parTimeMs ?? 100_000,
-    published: overrides.published,
-  });
-}
-
 describe('Level', () => {
-  describe('construction', () => {
-    it('should_expose_its_fields_when_constructed_validly', () => {
-      // Arrange
-      const board = buildBoard();
-
-      // Act
-      const level = buildLevel({ id: 'abc', index: 4, board });
-
-      // Assert
-      expect(level.id).toBe('abc');
-      expect(level.index).toBe(4);
-      expect(level.board).toBe(board);
-      expect(level.difficulty).toBeInstanceOf(EasyProfile);
+  const buildBoard = () =>
+    new BoardLayout({
+      rows: 3,
+      cols: 3,
+      arrows: [new ArrowPathInfo('a1', 'PINK', ['0,0'], 'RIGHT')],
     });
-
-    it('should_default_to_unpublished_when_not_specified', () => {
-      // Act
-      const level = buildLevel();
-
+  const buildParams = (over: Record<string, unknown> = {}) => ({
+    id: 'lvl-1',
+    index: 0,
+    difficulty: new EasyProfile(),
+    board: buildBoard(),
+    parTimeMs: 60_000,
+    ...over,
+  });
+  describe('construction', () => {
+    it('should_build_a_level_when_all_fields_are_valid', () => {
+      // Arrange & Act
+      const level = new Level(buildParams());
       // Assert
+      expect(level.id).toBe('lvl-1');
+      expect(level.index).toBe(0);
+      expect(level.parTimeMs).toBe(60_000);
+      expect(level.timeLimitMs).toBeNull();
       expect(level.published).toBe(false);
     });
-
-    it('should_throw_when_id_is_empty', () => {
-      // Act & Assert
-      expect(() => buildLevel({ id: '  ' })).toThrow();
-    });
-
-    it('should_throw_when_index_is_negative', () => {
-      // Act & Assert
-      expect(() => buildLevel({ index: -1 })).toThrow();
-    });
-
-    it('should_throw_when_parTimeMs_is_not_positive', () => {
-      // Act & Assert
-      expect(() => buildLevel({ parTimeMs: 0 })).toThrow();
-    });
-  });
-
-  describe('effectiveParTimeMs', () => {
-    it('should_apply_the_difficulty_multiplier_to_the_base_time', () => {
-      // Arrange
-      const base = 100_000;
-      const easy = buildLevel({ difficulty: new EasyProfile(), parTimeMs: base });
-
-      // Act
-      const effective = easy.effectiveParTimeMs();
-
-      // Assert: EasyProfile multiplier is 1.5
-      expect(effective).toBe(150_000);
-    });
-
-    it('should_be_stricter_on_a_harder_tier_for_the_same_base_time', () => {
-      // Arrange
-      const base = 100_000;
-      const easy = buildLevel({ difficulty: new EasyProfile(), parTimeMs: base });
-      const hard = buildLevel({ difficulty: new HardProfile(), parTimeMs: base });
-
-      // Act & Assert
-      expect(hard.effectiveParTimeMs()).toBeLessThan(easy.effectiveParTimeMs());
-    });
-  });
-
-  describe('publication lifecycle', () => {
-    it('should_become_published_when_publish_is_called', () => {
-      // Arrange
-      const level = buildLevel({ published: false });
-
-      // Act
-      level.publish();
-
+    it('should_default_timeLimitMs_to_null_when_omitted', () => {
+      // Arrange & Act
+      const level = new Level(buildParams());
       // Assert
+      expect(level.timeLimitMs).toBeNull();
+    });
+    it('should_accept_a_positive_integer_timeLimitMs', () => {
+      // Arrange & Act
+      const level = new Level(buildParams({ timeLimitMs: 120_000 }));
+      // Assert
+      expect(level.timeLimitMs).toBe(120_000);
+    });
+    it('should_accept_null_timeLimitMs_explicitly', () => {
+      // Arrange & Act
+      const level = new Level(buildParams({ timeLimitMs: null }));
+      // Assert
+      expect(level.timeLimitMs).toBeNull();
+    });
+  });
+  describe('validation', () => {
+    it('should_throw_when_id_is_empty', () => {
+      expect(() => new Level(buildParams({ id: '' }))).toThrow(/id/);
+    });
+    it('should_throw_when_index_is_negative', () => {
+      expect(() => new Level(buildParams({ index: -1 }))).toThrow(/index/);
+    });
+    it('should_throw_when_parTimeMs_is_zero', () => {
+      expect(() => new Level(buildParams({ parTimeMs: 0 }))).toThrow(
+        /parTimeMs/,
+      );
+    });
+    it('should_throw_when_timeLimitMs_is_zero', () => {
+      expect(() => new Level(buildParams({ timeLimitMs: 0 }))).toThrow(
+        /timeLimitMs/,
+      );
+    });
+    it('should_throw_when_timeLimitMs_is_not_an_integer', () => {
+      expect(() => new Level(buildParams({ timeLimitMs: 1.5 }))).toThrow(
+        /timeLimitMs/,
+      );
+    });
+    it('should_throw_when_timeLimitMs_is_negative', () => {
+      expect(() => new Level(buildParams({ timeLimitMs: -1 }))).toThrow(
+        /timeLimitMs/,
+      );
+    });
+  });
+  describe('effectiveParTimeMs', () => {
+    it('should_apply_the_easy_multiplier_when_difficulty_is_easy', () => {
+      // Arrange
+      const level = new Level(
+        buildParams({
+          difficulty: new EasyProfile(),
+          parTimeMs: 100_000,
+        }),
+      );
+      // Assert
+      expect(level.effectiveParTimeMs()).toBe(
+        Math.round(100_000 * new EasyProfile().parTimeMultiplier()),
+      );
+    });
+    it('should_apply_the_hard_multiplier_when_difficulty_is_hard', () => {
+      // Arrange
+      const level = new Level(
+        buildParams({
+          difficulty: new HardProfile(),
+          parTimeMs: 100_000,
+        }),
+      );
+      // Assert
+      expect(level.effectiveParTimeMs()).toBe(
+        Math.round(100_000 * new HardProfile().parTimeMultiplier()),
+      );
+    });
+  });
+  describe('publish/retire', () => {
+    it('should_start_unpublished_when_flag_is_omitted', () => {
+      expect(new Level(buildParams()).published).toBe(false);
+    });
+    it('should_become_published_after_publish_is_called', () => {
+      const level = new Level(buildParams());
+      level.publish();
       expect(level.published).toBe(true);
     });
-
-    it('should_become_unpublished_when_retire_is_called', () => {
-      // Arrange
-      const level = buildLevel({ published: true });
-
-      // Act
+    it('should_return_to_unpublished_after_retire_is_called', () => {
+      const level = new Level(buildParams({ published: true }));
       level.retire();
-
-      // Assert
       expect(level.published).toBe(false);
     });
   });

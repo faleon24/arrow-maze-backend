@@ -1,5 +1,3 @@
-import { Score } from './score';
-
 /**
  * DifficultyProfile — Strategy (GoF, behavioral).
  *
@@ -21,27 +19,28 @@ import { Score } from './score';
 export abstract class DifficultyProfile {
   /** Stable, machine-readable identifier persisted on the Level row. */
   abstract label(): string;
-
   /**
    * Multiplier applied to a level's base par time. Easier tiers are
    * more forgiving (>1), harder tiers are stricter (<1).
    */
   abstract parTimeMultiplier(): number;
-
   /**
    * Minimum number of stars a player must earn on a level of this tier
    * before the next one unlocks.
    */
   abstract unlockThreshold(): number;
-
   /**
-   * Grade a completed run into a star rating (1-3). Finishing always
-   * earns at least one star; faster completions earn more, with each
-   * tier applying its own time thresholds.
+   * Grade a completed run into a star rating (1-3) from its wall-clock
+   * time. Finishing always earns at least one star; faster completions
+   * earn more, with each tier applying its own time thresholds.
+   *
+   * Takes timeMs directly (not a full Score) because the server is
+   * authoritative for star computation — moves/stars from the client
+   * are untrusted. The domain no longer needs the full Score to grade;
+   * only the completion time matters.
    */
-  abstract starsFromScore(score: Score): number;
+  abstract starsFor(timeMs: number): number;
 }
-
 /**
  * EasyProfile — the most forgiving tier. Generous time budget, low
  * unlock bar. Aimed at onboarding players.
@@ -49,26 +48,21 @@ export abstract class DifficultyProfile {
 export class EasyProfile extends DifficultyProfile {
   private static readonly THREE_STAR_MS = 120_000; // 2 min
   private static readonly TWO_STAR_MS = 240_000; // 4 min
-
   label(): string {
     return 'EASY';
   }
-
   parTimeMultiplier(): number {
     return 1.5;
   }
-
   unlockThreshold(): number {
     return 1;
   }
-
-  starsFromScore(score: Score): number {
-    if (score.timeMs <= EasyProfile.THREE_STAR_MS) return 3;
-    if (score.timeMs <= EasyProfile.TWO_STAR_MS) return 2;
+  starsFor(timeMs: number): number {
+    if (timeMs <= EasyProfile.THREE_STAR_MS) return 3;
+    if (timeMs <= EasyProfile.TWO_STAR_MS) return 2;
     return 1;
   }
 }
-
 /**
  * MediumProfile — the balanced tier. Par time as designed, moderate
  * unlock bar.
@@ -76,26 +70,21 @@ export class EasyProfile extends DifficultyProfile {
 export class MediumProfile extends DifficultyProfile {
   private static readonly THREE_STAR_MS = 90_000; // 1.5 min
   private static readonly TWO_STAR_MS = 180_000; // 3 min
-
   label(): string {
     return 'MEDIUM';
   }
-
   parTimeMultiplier(): number {
     return 1.0;
   }
-
   unlockThreshold(): number {
     return 2;
   }
-
-  starsFromScore(score: Score): number {
-    if (score.timeMs <= MediumProfile.THREE_STAR_MS) return 3;
-    if (score.timeMs <= MediumProfile.TWO_STAR_MS) return 2;
+  starsFor(timeMs: number): number {
+    if (timeMs <= MediumProfile.THREE_STAR_MS) return 3;
+    if (timeMs <= MediumProfile.TWO_STAR_MS) return 2;
     return 1;
   }
 }
-
 /**
  * HardProfile — the strict tier. Tight time budget, high unlock bar.
  * Aimed at players seeking a challenge.
@@ -103,22 +92,18 @@ export class MediumProfile extends DifficultyProfile {
 export class HardProfile extends DifficultyProfile {
   private static readonly THREE_STAR_MS = 60_000; // 1 min
   private static readonly TWO_STAR_MS = 120_000; // 2 min
-
   label(): string {
     return 'HARD';
   }
-
   parTimeMultiplier(): number {
     return 0.75;
   }
-
   unlockThreshold(): number {
     return 3;
   }
-
-  starsFromScore(score: Score): number {
-    if (score.timeMs <= HardProfile.THREE_STAR_MS) return 3;
-    if (score.timeMs <= HardProfile.TWO_STAR_MS) return 2;
+  starsFor(timeMs: number): number {
+    if (timeMs <= HardProfile.THREE_STAR_MS) return 3;
+    if (timeMs <= HardProfile.TWO_STAR_MS) return 2;
     return 1;
   }
 }

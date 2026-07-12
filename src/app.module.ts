@@ -117,12 +117,16 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
     },
     {
       provide: SubmitScoreUseCase,
-      useFactory: (progress: IProgressRepository, clock: IClock) =>
+      useFactory: (
+        progress: IProgressRepository,
+        clock: IClock,
+        levels: ILevelRepository,
+      ) =>
         withLogging(
-          new SubmitScoreUseCase(progress, clock),
+          new SubmitScoreUseCase(progress, clock, levels),
           'SubmitScoreUseCase',
         ),
-      inject: [PROGRESS_REPOSITORY, CLOCK],
+      inject: [PROGRESS_REPOSITORY, CLOCK, LEVEL_REPOSITORY],
     },
     {
       provide: GetProgressUseCase,

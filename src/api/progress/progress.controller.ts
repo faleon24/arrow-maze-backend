@@ -91,7 +91,6 @@ export class ProgressController {
       levelId: dto.levelId,
       moves: dto.moves,
       timeMs: dto.timeMs,
-      stars: dto.stars,
     });
     return ProgressResponseDto.from(progress);
   }
