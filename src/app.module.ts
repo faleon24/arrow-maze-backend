@@ -126,6 +126,7 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
   LeaderboardController,
   AdminLevelsController,
   ShopController,
+  MeShopController,
 ],
 
 
