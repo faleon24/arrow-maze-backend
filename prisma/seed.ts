@@ -25,7 +25,11 @@ import {
  * running it repeatedly refreshes these three levels rather than
  * accumulating duplicates. Fase 8 replaces this transitional 3-level
  * catalog with a hand-crafted 15-level one across three difficulties.
+ *
+ * Shop items are seeded alongside levels using canonical UUIDv4 ids
+ * so future admin/purchase DTOs validating @IsUUID('4') accept them.
  */
+
 /**
  * Level 1 (EASY) — a 2x2 board where every arrow points straight off
  * the edge. All four are clearable from the start, in any order. The
@@ -109,9 +113,39 @@ function buildLevelThree(): Level {
     published: true,
   });
 }
+
+/**
+ * Initial shop catalog. Canonical UUIDv4 ids so purchase DTOs that
+ * validate @IsUUID('4') downstream accept them without a re-seed.
+ * Kept small (3 items across the two whitelisted kinds); Fase 8+ can
+ * expand as gameplay features land.
+ */
+const shopItems = [
+  {
+    id: '44444444-4444-4444-8444-444444444444',
+    name: 'Neon Pink Theme',
+    costCoins: 100,
+    kind: 'COSMETIC',
+  },
+  {
+    id: '55555555-5555-4555-8555-555555555555',
+    name: 'Extra Life',
+    costCoins: 50,
+    kind: 'POWERUP',
+  },
+  {
+    id: '66666666-6666-4666-8666-666666666666',
+    name: 'Hint Reveal',
+    costCoins: 20,
+    kind: 'POWERUP',
+  },
+];
+
 async function main(): Promise<void> {
   const prisma = new PrismaService();
   await prisma.$connect();
+
+  // Levels — built via domain constructors so invariants are enforced.
   const repository = new PostgresLevelRepository(prisma);
   const levels = [buildLevelOne(), buildLevelTwo(), buildLevelThree()];
   for (const level of levels) {
@@ -121,6 +155,17 @@ async function main(): Promise<void> {
     );
   }
   console.log(`Done. ${levels.length} levels seeded.`);
+
+  // Shop items — upsert-by-id so the seed is idempotent.
+  for (const item of shopItems) {
+    await prisma.shopItem.upsert({
+      where: { id: item.id },
+      create: item,
+      update: item,
+    });
+  }
+  console.log(`Seeded ${shopItems.length} shop items.`);
+
   await prisma.$disconnect();
 }
 main().catch((error) => {
