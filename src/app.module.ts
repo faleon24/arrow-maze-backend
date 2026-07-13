@@ -11,6 +11,7 @@ import {
   ID_GENERATOR,
   LEVEL_REPOSITORY,
   PROGRESS_REPOSITORY,
+  LEADERBOARD_REPOSITORY,
 } from './application/ports/tokens';
 // Application layer — use cases (framework-agnostic)
 import { RegisterUserUseCase } from './application/usecases/auth/register-user.usecase';
@@ -18,6 +19,7 @@ import { LoginUseCase } from './application/usecases/auth/login.usecase';
 import { ListLevelsUseCase } from './application/usecases/levels/list-levels.usecase';
 import { SubmitScoreUseCase } from './application/usecases/progress/submit-score.usecase';
 import { GetProgressUseCase } from './application/usecases/progress/get-progress.usecase';
+import { GetLeaderboardUseCase } from './application/usecases/leaderboard/get-leaderboard.usecase';
 // Application layer — port interfaces (only for typing the factory params)
 import { IUserRepository } from './application/ports/out/user-repository.port';
 import { IPasswordHasher } from './application/ports/out/password-hasher.port';
@@ -26,6 +28,7 @@ import { IClock } from './application/ports/out/clock.port';
 import { IIdGenerator } from './application/ports/out/id-generator.port';
 import { ILevelRepository } from './application/ports/out/level-repository.port';
 import { IProgressRepository } from './application/ports/out/progress-repository.port';
+import { ILeaderboardRepository } from './application/ports/out/leaderboard-repository.port';
 // Infrastructure layer — concrete adapters
 import { PrismaService } from './infrastructure/persistence/prisma.service';
 import { PostgresUserRepository } from './infrastructure/persistence/postgres-user.repository';
@@ -35,11 +38,13 @@ import { BcryptPasswordHasher } from './infrastructure/security/bcrypt-password-
 import { JwtTokenService } from './infrastructure/security/jwt-token-service';
 import { SystemClock } from './infrastructure/system/system-clock';
 import { UuidGenerator } from './infrastructure/system/uuid-generator';
+import { PostgresLeaderboardRepository } from './infrastructure/persistence/postgres-leaderboard.repository';
 // API layer — REST controllers
 import { AuthController } from './api/auth/auth.controller';
 import { LevelsController } from './api/levels/levels.controller';
 import { ProgressController } from './api/progress/progress.controller';
 import { JwtAuthGuard } from './api/guards/jwt-auth.guard';
+import { LeaderboardController } from './api/leaderboard/leaderboard.controller';
 /**
  * AppModule is the composition root of the application.
  *
@@ -86,7 +91,7 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
   return new LoggingUseCaseDecorator(uc, name, new Logger('UseCase'));
 }
 @Module({
-  controllers: [AuthController, LevelsController, ProgressController],
+  controllers: [AuthController, LevelsController, ProgressController, LeaderboardController],
 
   providers: [
     // ------------------------------------------------------------------
@@ -99,6 +104,10 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
     {
       provide: USER_REPOSITORY,
       useClass: PostgresUserRepository,
+    },
+     {
+     provide: LEADERBOARD_REPOSITORY,
+     useClass: PostgresLeaderboardRepository,
     },
     {
       provide: PASSWORD_HASHER,
@@ -134,6 +143,12 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
         withLogging(new GetProgressUseCase(progress), 'GetProgressUseCase'),
       inject: [PROGRESS_REPOSITORY],
     },
+    {
+     provide: GetLeaderboardUseCase,
+     useFactory: (leaderboard: ILeaderboardRepository) =>
+       withLogging(new GetLeaderboardUseCase(leaderboard), 'GetLeaderboardUseCase'),
+     inject: [LEADERBOARD_REPOSITORY],
+   },
     {
       provide: ListLevelsUseCase,
       useFactory: (levels: ILevelRepository) =>
