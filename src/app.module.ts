@@ -2,6 +2,9 @@ import { Module, Logger } from '@nestjs/common';
 import { GetUserByIdUseCase } from './application/usecases/auth/get-user-by-id.usecase';
 import { LoggingUseCaseDecorator } from './application/decorators/logging-use-case.decorator';
 import { UseCase } from './application/usecases/use-case';
+import { BoardSolver } from './domain/services/board-solver';
+
+
 // Injection tokens (application layer contract)
 import {
   USER_REPOSITORY,
@@ -20,6 +23,8 @@ import { ListLevelsUseCase } from './application/usecases/levels/list-levels.use
 import { SubmitScoreUseCase } from './application/usecases/progress/submit-score.usecase';
 import { GetProgressUseCase } from './application/usecases/progress/get-progress.usecase';
 import { GetLeaderboardUseCase } from './application/usecases/leaderboard/get-leaderboard.usecase';
+import { UpsertLevelUseCase } from './application/usecases/levels/upsert-level.usecase';
+
 // Application layer — port interfaces (only for typing the factory params)
 import { IUserRepository } from './application/ports/out/user-repository.port';
 import { IPasswordHasher } from './application/ports/out/password-hasher.port';
@@ -45,6 +50,8 @@ import { LevelsController } from './api/levels/levels.controller';
 import { ProgressController } from './api/progress/progress.controller';
 import { JwtAuthGuard } from './api/guards/jwt-auth.guard';
 import { LeaderboardController } from './api/leaderboard/leaderboard.controller';
+import { AdminLevelsController } from './api/admin/admin-levels.controller';
+import { AdminKeyGuard } from './api/guards/admin-key.guard';
 /**
  * AppModule is the composition root of the application.
  *
@@ -91,7 +98,13 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
   return new LoggingUseCaseDecorator(uc, name, new Logger('UseCase'));
 }
 @Module({
-  controllers: [AuthController, LevelsController, ProgressController, LeaderboardController],
+  controllers: [
+  AuthController,
+  LevelsController,
+  ProgressController,
+  LeaderboardController,
+  AdminLevelsController,
+],
 
   providers: [
     // ------------------------------------------------------------------
@@ -101,6 +114,8 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
     // ------------------------------------------------------------------
     // Outbound port adapters — one per port, bound by its injection token
     // ------------------------------------------------------------------
+  
+
     {
       provide: USER_REPOSITORY,
       useClass: PostgresUserRepository,
@@ -161,10 +176,18 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
         withLogging(new GetUserByIdUseCase(users), 'GetUserByIdUseCase'),
       inject: [USER_REPOSITORY],
     },
+
+    BoardSolver,  
+  {
+    provide: UpsertLevelUseCase,
+    useFactory: (levels: ILevelRepository, solver: BoardSolver) =>
+      withLogging(new UpsertLevelUseCase(levels, solver), 'UpsertLevelUseCase'),
+    inject: [LEVEL_REPOSITORY, BoardSolver],
+  },
     // ------------------------------------------------------------------
     // API layer — guards (the JWT authentication aspect)
     // ------------------------------------------------------------------
-    JwtAuthGuard,
+    JwtAuthGuard, AdminKeyGuard,
     {
       provide: TOKEN_SERVICE,
       useFactory: () => {
