@@ -56,7 +56,7 @@ describe('/api/me wallet + purchases (e2e)', () => {
         displayName: 'Buyer',
       })
       .expect(201);
-    bearer = reg.body.accessToken;
+    bearer = reg.body.token;
 
     const me = await request(app.getHttpServer())
       .get('/api/auth/me')

@@ -9,8 +9,8 @@ import { EasyProfile } from '../../../src/domain/models/difficulty-profile';
 import { Level } from '../../../src/domain/models/level';
 import { AppModule } from '../../../src/app.module';
 import { configureApp } from '../../../src/configure-app';
-import { PostgresLevelRepository } from '../../../src/infrastructure/persistence/postgres-level.repository';
-import { PrismaService } from '../../../src/infrastructure/persistence/prisma.service';
+import { LEVEL_REPOSITORY } from '../../../src/application/ports/tokens';
+import { ILevelRepository } from '../../../src/application/ports/out/level-repository.port';import { PrismaService } from '../../../src/infrastructure/persistence/prisma.service';
 import { DatabaseCleaner } from '../../infrastructure/helpers/database-cleaner';
 /**
  * E2E for GET /api/leaderboard/:levelId.
@@ -23,7 +23,7 @@ import { DatabaseCleaner } from '../../infrastructure/helpers/database-cleaner';
 describe('GET /api/leaderboard/:levelId (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let levelRepo: PostgresLevelRepository;
+  let levelRepo: ILevelRepository;
   let cleaner: DatabaseCleaner;
 
   const LEVEL_ID = '11111111-1111-4111-8111-111111111111';
@@ -52,7 +52,7 @@ describe('GET /api/leaderboard/:levelId (e2e)', () => {
     await app.init();
 
     prisma = app.get(PrismaService);
-    levelRepo = app.get(PostgresLevelRepository);
+    levelRepo = app.get<ILevelRepository>(LEVEL_REPOSITORY);
     cleaner = new DatabaseCleaner(prisma as unknown as PrismaClient);
   });
 
