@@ -23,6 +23,55 @@ describe('ArrowPathInfo', () => {
       expect(arrow.cells).toEqual(['4,2', '4,3', '3,3']);
       expect(arrow.head).toBe('3,3');
     });
+
+    it('should_build_an_l_shaped_arrow_when_cells_turn_once', () => {
+      // Arrange & Act
+      const arrow = new ArrowPathInfo(
+        'L1',
+        'GREEN',
+        ['2,0', '2,1', '2,2', '1,2'],
+        'UP',
+      );
+      // Assert
+      expect(arrow.cells).toEqual(['2,0', '2,1', '2,2', '1,2']);
+      expect(arrow.head).toBe('1,2');
+    });
+    it('should_build_a_u_shaped_arrow_when_cells_turn_twice_along_the_same_axis', () => {
+      // Arrange & Act
+      const arrow = new ArrowPathInfo(
+        'U1',
+        'BLUE',
+        ['0,0', '1,0', '2,0', '2,1', '2,2', '1,2', '0,2'],
+        'UP',
+      );
+      // Assert
+      expect(arrow.cells).toHaveLength(7);
+      expect(arrow.head).toBe('0,2');
+    });
+    it('should_build_an_s_shaped_arrow_when_cells_turn_twice_in_opposite_directions', () => {
+      // Arrange & Act
+      const arrow = new ArrowPathInfo(
+        'S1',
+        'PURPLE',
+        ['0,0', '0,1', '1,1', '1,2', '2,2'],
+        'DOWN',
+      );
+      // Assert
+      expect(arrow.cells).toHaveLength(5);
+      expect(arrow.head).toBe('2,2');
+    });
+    it('should_build_a_zigzag_arrow_when_cells_alternate_axis_repeatedly', () => {
+      // Arrange & Act
+      const arrow = new ArrowPathInfo(
+        'Z1',
+        'YELLOW',
+        ['0,0', '1,0', '1,1', '2,1', '2,2', '3,2'],
+        'DOWN',
+      );
+      // Assert
+      expect(arrow.cells).toHaveLength(6);
+      expect(arrow.head).toBe('3,2');
+    });
     it('should_normalize_case_when_color_and_direction_are_lowercase', () => {
       // Arrange & Act
       const arrow = new ArrowPathInfo('a3', 'pink', ['0,0'], 'up');

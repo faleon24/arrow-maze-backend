@@ -36,6 +36,22 @@ describe('BoardLayout (v2)', () => {
       expect(layout.walls).toEqual(['4,4']);
       expect(layout.collectibles).toHaveLength(1);
     });
+
+    it('should_build_a_board_with_bent_arrows_that_do_not_overlap', () => {
+      // Arrange & Act
+      const layout = new BoardLayout({
+        rows: 5,
+        cols: 5,
+        arrows: [
+          arrow('L1', 'GREEN', ['4,0', '4,1', '3,1'], 'UP'),
+          arrow('U1', 'BLUE', ['0,0', '0,1', '0,2', '1,2', '2,2'], 'DOWN'),
+        ],
+      });
+      // Assert
+      expect(layout.arrows).toHaveLength(2);
+      expect(layout.arrows[0].head).toBe('3,1');
+      expect(layout.arrows[1].head).toBe('2,2');
+    });
   });
   describe('validation - dimensions', () => {
     it('should_throw_when_rows_is_zero', () => {
@@ -102,6 +118,19 @@ describe('BoardLayout (v2)', () => {
       ).toThrow(/overlap at "0,1"/);
     });
   });
+  it('should_throw_when_two_bent_arrows_share_a_cell_at_a_turn', () => {
+      expect(
+        () =>
+          new BoardLayout({
+            rows: 4,
+            cols: 4,
+            arrows: [
+              arrow('a1', 'PINK', ['0,0', '0,1', '1,1'], 'DOWN'),
+              arrow('a2', 'BLUE', ['1,1', '2,1'], 'DOWN'),
+            ],
+          }),
+      ).toThrow(/overlap/);
+    });
   describe('validation - walls', () => {
     it('should_throw_when_wall_position_has_bad_format', () => {
       expect(
