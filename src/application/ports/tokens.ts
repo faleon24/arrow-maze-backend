@@ -16,3 +16,5 @@ export const LEVEL_REPOSITORY = Symbol('ILevelRepository');
 export const PROGRESS_REPOSITORY = Symbol('IProgressRepository');
 export const LEADERBOARD_REPOSITORY = 'LEADERBOARD_REPOSITORY';
 export const SHOP_REPOSITORY = 'SHOP_REPOSITORY';
+export const WALLET_REPOSITORY = 'WALLET_REPOSITORY';
+export const INVENTORY_REPOSITORY = 'INVENTORY_REPOSITORY';

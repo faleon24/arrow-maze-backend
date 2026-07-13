@@ -7,6 +7,8 @@ import { BoardSolver } from './domain/services/board-solver';
 
 
 
+
+
 // Injection tokens (application layer contract)
 import {
   USER_REPOSITORY,
@@ -18,6 +20,8 @@ import {
   PROGRESS_REPOSITORY,
   LEADERBOARD_REPOSITORY,
   SHOP_REPOSITORY,
+  WALLET_REPOSITORY,
+  INVENTORY_REPOSITORY,
 } from './application/ports/tokens';
 // Application layer — use cases (framework-agnostic)
 import { RegisterUserUseCase } from './application/usecases/auth/register-user.usecase';
@@ -39,6 +43,10 @@ import { IIdGenerator } from './application/ports/out/id-generator.port';
 import { ILevelRepository } from './application/ports/out/level-repository.port';
 import { IProgressRepository } from './application/ports/out/progress-repository.port';
 import { ILeaderboardRepository } from './application/ports/out/leaderboard-repository.port';
+import { GetWalletUseCase } from './application/usecases/wallet/get-wallet.usecase';
+import { PurchaseItemUseCase } from './application/usecases/purchase/purchase-item.usecase';
+import { IWalletRepository } from './application/ports/out/wallet-repository.port';
+import { IInventoryRepository } from './application/ports/out/inventory-repository.port';
 // Infrastructure layer — concrete adapters
 import { PrismaService } from './infrastructure/persistence/prisma.service';
 import { PostgresUserRepository } from './infrastructure/persistence/postgres-user.repository';
@@ -50,6 +58,8 @@ import { SystemClock } from './infrastructure/system/system-clock';
 import { UuidGenerator } from './infrastructure/system/uuid-generator';
 import { PostgresLeaderboardRepository } from './infrastructure/persistence/postgres-leaderboard.repository';
 import { PostgresShopRepository } from './infrastructure/persistence/postgres-shop.repository';
+import { PostgresWalletRepository } from './infrastructure/persistence/postgres-wallet.repository';
+import { PostgresInventoryRepository } from './infrastructure/persistence/postgres-inventory.repository';
 // API layer — REST controllers
 import { AuthController } from './api/auth/auth.controller';
 import { LevelsController } from './api/levels/levels.controller';
@@ -59,6 +69,7 @@ import { LeaderboardController } from './api/leaderboard/leaderboard.controller'
 import { AdminLevelsController } from './api/admin/admin-levels.controller';
 import { AdminKeyGuard } from './api/guards/admin-key.guard';
 import { ShopController } from './api/shop/shop.controller';
+import { MeShopController } from './api/me/me-shop.controller';
 
 /**
  * AppModule is the composition root of the application.
@@ -236,6 +247,34 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
       provide: ID_GENERATOR,
       useClass: UuidGenerator,
     },
+
+    {
+  provide: WALLET_REPOSITORY,
+  useClass: PostgresWalletRepository,
+},
+{
+  provide: INVENTORY_REPOSITORY,
+  useClass: PostgresInventoryRepository,
+},
+{
+  provide: GetWalletUseCase,
+  useFactory: (wallets: IWalletRepository) =>
+    withLogging(new GetWalletUseCase(wallets), 'GetWalletUseCase'),
+  inject: [WALLET_REPOSITORY],
+},
+{
+  provide: PurchaseItemUseCase,
+  useFactory: (
+    shop: IShopRepository,
+    wallets: IWalletRepository,
+    inventories: IInventoryRepository,
+  ) =>
+    withLogging(
+      new PurchaseItemUseCase(shop, wallets, inventories),
+      'PurchaseItemUseCase',
+    ),
+  inject: [SHOP_REPOSITORY, WALLET_REPOSITORY, INVENTORY_REPOSITORY],
+},
     // ------------------------------------------------------------------
     // Application use cases — wired via factory so they stay
     // Nest-agnostic. Parameter order MUST match each use case's
