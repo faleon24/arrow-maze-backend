@@ -5,6 +5,8 @@ import { UseCase } from './application/usecases/use-case';
 import { BoardSolver } from './domain/services/board-solver';
 
 
+
+
 // Injection tokens (application layer contract)
 import {
   USER_REPOSITORY,
@@ -15,6 +17,7 @@ import {
   LEVEL_REPOSITORY,
   PROGRESS_REPOSITORY,
   LEADERBOARD_REPOSITORY,
+  SHOP_REPOSITORY,
 } from './application/ports/tokens';
 // Application layer — use cases (framework-agnostic)
 import { RegisterUserUseCase } from './application/usecases/auth/register-user.usecase';
@@ -24,6 +27,8 @@ import { SubmitScoreUseCase } from './application/usecases/progress/submit-score
 import { GetProgressUseCase } from './application/usecases/progress/get-progress.usecase';
 import { GetLeaderboardUseCase } from './application/usecases/leaderboard/get-leaderboard.usecase';
 import { UpsertLevelUseCase } from './application/usecases/levels/upsert-level.usecase';
+import { ListShopItemsUseCase } from './application/usecases/shop/list-shop-items.usecase';
+import { IShopRepository } from './application/ports/out/shop-repository.port';
 
 // Application layer — port interfaces (only for typing the factory params)
 import { IUserRepository } from './application/ports/out/user-repository.port';
@@ -44,6 +49,7 @@ import { JwtTokenService } from './infrastructure/security/jwt-token-service';
 import { SystemClock } from './infrastructure/system/system-clock';
 import { UuidGenerator } from './infrastructure/system/uuid-generator';
 import { PostgresLeaderboardRepository } from './infrastructure/persistence/postgres-leaderboard.repository';
+import { PostgresShopRepository } from './infrastructure/persistence/postgres-shop.repository';
 // API layer — REST controllers
 import { AuthController } from './api/auth/auth.controller';
 import { LevelsController } from './api/levels/levels.controller';
@@ -52,6 +58,8 @@ import { JwtAuthGuard } from './api/guards/jwt-auth.guard';
 import { LeaderboardController } from './api/leaderboard/leaderboard.controller';
 import { AdminLevelsController } from './api/admin/admin-levels.controller';
 import { AdminKeyGuard } from './api/guards/admin-key.guard';
+import { ShopController } from './api/shop/shop.controller';
+
 /**
  * AppModule is the composition root of the application.
  *
@@ -98,13 +106,17 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
   return new LoggingUseCaseDecorator(uc, name, new Logger('UseCase'));
 }
 @Module({
-  controllers: [
+
+
+ controllers: [
   AuthController,
   LevelsController,
   ProgressController,
   LeaderboardController,
   AdminLevelsController,
+  ShopController,
 ],
+
 
   providers: [
     // ------------------------------------------------------------------
@@ -184,6 +196,17 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
       withLogging(new UpsertLevelUseCase(levels, solver), 'UpsertLevelUseCase'),
     inject: [LEVEL_REPOSITORY, BoardSolver],
   },
+
+  {
+  provide: SHOP_REPOSITORY,
+  useClass: PostgresShopRepository,
+},
+{
+  provide: ListShopItemsUseCase,
+  useFactory: (shop: IShopRepository) =>
+    withLogging(new ListShopItemsUseCase(shop), 'ListShopItemsUseCase'),
+  inject: [SHOP_REPOSITORY],
+},
     // ------------------------------------------------------------------
     // API layer — guards (the JWT authentication aspect)
     // ------------------------------------------------------------------

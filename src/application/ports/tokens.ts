@@ -15,3 +15,4 @@ export const ID_GENERATOR = Symbol('IIdGenerator');
 export const LEVEL_REPOSITORY = Symbol('ILevelRepository');
 export const PROGRESS_REPOSITORY = Symbol('IProgressRepository');
 export const LEADERBOARD_REPOSITORY = 'LEADERBOARD_REPOSITORY';
+export const SHOP_REPOSITORY = 'SHOP_REPOSITORY';
