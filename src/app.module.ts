@@ -31,6 +31,9 @@ import { SubmitScoreUseCase } from './application/usecases/progress/submit-score
 import { GetProgressUseCase } from './application/usecases/progress/get-progress.usecase';
 import { GetLeaderboardUseCase } from './application/usecases/leaderboard/get-leaderboard.usecase';
 import { UpsertLevelUseCase } from './application/usecases/levels/upsert-level.usecase';
+import { GenerateLevelUseCase } from './application/usecases/levels/generate-level.usecase';
+import { DefaultRandomSource } from './domain/services/random-source';
+import { RandomBoardGenerator } from './domain/services/random-board-generator';
 import { ListShopItemsUseCase } from './application/usecases/shop/list-shop-items.usecase';
 import { IShopRepository } from './application/ports/out/shop-repository.port';
 
@@ -209,6 +212,19 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
     inject: [LEVEL_REPOSITORY, BoardSolver],
   },
 
+  {
+    provide: GenerateLevelUseCase,
+    useFactory: (
+      levels: ILevelRepository,
+      ids: IIdGenerator,
+      solver: BoardSolver,
+    ) => {
+      const rng = new DefaultRandomSource();
+      const generator = new RandomBoardGenerator(solver, rng);
+      return new GenerateLevelUseCase(levels, generator, ids);
+    },
+    inject: [LEVEL_REPOSITORY, ID_GENERATOR, BoardSolver],
+  },
   {
   provide: SHOP_REPOSITORY,
   useClass: PostgresShopRepository,
