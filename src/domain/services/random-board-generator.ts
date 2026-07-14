@@ -33,15 +33,31 @@ interface DifficultyParams {
   maxActivatableRatio: number;
   minCollectibles: number;
   maxCollectibles: number;
+  /**
+   * Chance (0..1) that growPath rejects continuing in the same
+   * direction and picks a turn instead. Higher = more L/U/S/snake
+   * shapes, matching the reference game's visual density.
+   */
+  turnBias: number;
 }
 
 /**
- * RandomBoardGenerator — produces solver-verified, difficulty-scaled
- * random BoardLayouts (v3: with STAR collectibles).
+ * RandomBoardGenerator v4 — denser, snakier boards that match the
+ * reference SayGames Arrow Maze more closely.
+ *
+ * Changes vs v3:
+ *   - Longer max arrow length (HARD up to 7 cells).
+ *   - More arrows per board (HARD 10-14 vs 8-12).
+ *   - Bigger HARD grids (7-9 vs 6-8).
+ *   - Turn bias in growPath — biases the random walk toward changing
+ *     direction, producing L/U/S/snake shapes rather than mostly
+ *     straight paths.
+ *   - MAX_BOARD_ATTEMPTS raised to 200 to accommodate the stricter
+ *     packing constraints.
  */
 export class RandomBoardGenerator {
-  private static readonly MAX_BOARD_ATTEMPTS = 100;
-  private static readonly MAX_ARROW_ATTEMPTS = 40;
+  private static readonly MAX_BOARD_ATTEMPTS = 200;
+  private static readonly MAX_ARROW_ATTEMPTS = 50;
   private static readonly MAX_COLLECTIBLE_ATTEMPTS = 30;
   private static readonly PARAMS: Record<string, DifficultyParams> = {
     EASY: {
@@ -49,39 +65,42 @@ export class RandomBoardGenerator {
       maxRows: 5,
       minCols: 4,
       maxCols: 5,
-      minArrows: 3,
-      maxArrows: 5,
-      minArrowLength: 1,
-      maxArrowLength: 2,
+      minArrows: 4,
+      maxArrows: 6,
+      minArrowLength: 2,
+      maxArrowLength: 3,
       maxActivatableRatio: 1.0,
       minCollectibles: 0,
       maxCollectibles: 2,
+      turnBias: 0.5,
     },
     MEDIUM: {
       minRows: 5,
-      maxRows: 6,
+      maxRows: 7,
       minCols: 5,
-      maxCols: 6,
-      minArrows: 5,
-      maxArrows: 8,
-      minArrowLength: 1,
-      maxArrowLength: 3,
-      maxActivatableRatio: 0.7,
+      maxCols: 7,
+      minArrows: 6,
+      maxArrows: 9,
+      minArrowLength: 3,
+      maxArrowLength: 5,
+      maxActivatableRatio: 0.6,
       minCollectibles: 1,
       maxCollectibles: 3,
+      turnBias: 0.6,
     },
     HARD: {
-      minRows: 6,
-      maxRows: 8,
-      minCols: 6,
-      maxCols: 8,
-      minArrows: 8,
-      maxArrows: 12,
-      minArrowLength: 1,
-      maxArrowLength: 4,
-      maxActivatableRatio: 0.4,
+      minRows: 7,
+      maxRows: 9,
+      minCols: 7,
+      maxCols: 9,
+      minArrows: 10,
+      maxArrows: 14,
+      minArrowLength: 4,
+      maxArrowLength: 7,
+      maxActivatableRatio: 0.35,
       minCollectibles: 2,
       maxCollectibles: 4,
+      turnBias: 0.7,
     },
   };
 
@@ -148,11 +167,6 @@ export class RandomBoardGenerator {
     }
   }
 
-  /**
-   * Scatter STAR collectibles on random free cells. Difficulty-scaled
-   * target count; may fall short if the board is too dense to place
-   * more, which is fine — the game plays either way.
-   */
   private placeCollectibles(
     rows: number,
     cols: number,
@@ -204,7 +218,14 @@ export class RandomBoardGenerator {
       const startCell = `${startRow},${startCol}`;
       if (occupied.has(startCell)) continue;
 
-      const path = this.growPath(startCell, targetLen, rows, cols, occupied);
+      const path = this.growPath(
+        startCell,
+        targetLen,
+        rows,
+        cols,
+        occupied,
+        params.turnBias,
+      );
       if (path.length < 1) continue;
 
       const color = COLORS[this.rng.nextInt(COLORS.length)];
@@ -219,20 +240,35 @@ export class RandomBoardGenerator {
     return null;
   }
 
+  /**
+   * Grow a Manhattan-1 non-crossing path via biased random walk.
+   *
+   * With probability `turnBias`, if we can turn (a non-forward
+   * candidate exists), we drop the forward candidate from the choice
+   * set — this produces the L/U/S/snake shapes that make dense boards
+   * read visually. Falls back to uniform random when only the forward
+   * candidate is available.
+   */
   private growPath(
     startCell: string,
     targetLen: number,
     rows: number,
     cols: number,
     occupied: Set<string>,
+    turnBias: number,
   ): string[] {
     const path = [startCell];
     const pathSet = new Set(path);
+    let lastDelta: { dr: number; dc: number } | null = null;
+
     while (path.length < targetLen) {
       const [r, c] = path[path.length - 1]
         .split(',')
         .map((s) => parseInt(s, 10));
-      const candidates: string[] = [];
+      const candidates: {
+        cell: string;
+        delta: { dr: number; dc: number };
+      }[] = [];
       for (const d of DIRECTIONS) {
         const delta = DIRECTION_DELTAS[d];
         const nr = r + delta.dr;
@@ -240,12 +276,31 @@ export class RandomBoardGenerator {
         if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
         const cell = `${nr},${nc}`;
         if (occupied.has(cell) || pathSet.has(cell)) continue;
-        candidates.push(cell);
+        candidates.push({ cell, delta });
       }
       if (candidates.length === 0) break;
-      const next = candidates[this.rng.nextInt(candidates.length)];
-      path.push(next);
-      pathSet.add(next);
+
+      // Turn bias: if we have a previous segment AND at least one
+      // non-forward candidate, drop the forward candidate with the
+      // configured probability.
+      let pickPool = candidates;
+      if (
+        lastDelta !== null &&
+        candidates.length > 1 &&
+        this.rng.nextInt(100) < Math.floor(turnBias * 100)
+      ) {
+        const nonForward = candidates.filter(
+          (c) => c.delta.dr !== lastDelta!.dr || c.delta.dc !== lastDelta!.dc,
+        );
+        if (nonForward.length > 0) {
+          pickPool = nonForward;
+        }
+      }
+
+      const chosen = pickPool[this.rng.nextInt(pickPool.length)];
+      path.push(chosen.cell);
+      pathSet.add(chosen.cell);
+      lastDelta = chosen.delta;
     }
     return path;
   }
