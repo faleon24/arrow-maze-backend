@@ -37,7 +37,7 @@ describe('Progress endpoints (e2e)', () => {
   };
   const validRun = {
     levelId: LEVEL_UUID,
-    moves: 12,
+    moves: 1,
     timeMs: 45_000,
   };
   const buildSeedLevel = (id: string, index: number): Level =>

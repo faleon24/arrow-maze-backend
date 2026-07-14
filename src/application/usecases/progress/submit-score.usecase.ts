@@ -12,19 +12,32 @@ import { UseCase } from '../use-case';
  *
  * The flow: load the level to prove it exists AND is published (a
  * missing or draft level is a 404 — the client should never see
- * drafts), grade the run into stars via the level's DifficultyProfile
- * strategy, load the player's progress, apply the "best score wins,
- * attempt counted" rule, then persist. The business decision lives
- * entirely in the aggregate; this use case only orchestrates.
+ * drafts), grade the run into stars using BOTH the moves used and
+ * the time taken, load the player's progress, apply the "best score
+ * wins, attempt counted" rule, then persist. The business decision
+ * lives entirely in the aggregate; this use case only orchestrates.
+ *
+ * Grading:
+ *   blockedTaps  = max(0, moves - arrowCount)  (every blocked tap
+ *                                              costs a move but does
+ *                                              not clear an arrow)
+ *   movesBased   = clamp(3 - blockedTaps, 1, 3)
+ *   timeBased    = difficulty.starsFor(timeMs)
+ *   stars        = min(movesBased, timeBased)
+ *
+ * So a fast, mistake-free run earns 3 stars; a fast run with two
+ * blocked taps earns 1; a mistake-free but slow run is capped by
+ * the difficulty's time thresholds. The two axes bound each other
+ * (worst-of), keeping the classic mobile-puzzle grading contract
+ * (attempts matter) while still rewarding speed.
  *
  * Server authority:
  *   - The client sends moves + timeMs. It does NOT send stars.
- *   - starsFor(timeMs) is computed here from the level's difficulty
- *     strategy. A client that lies about time is still bounded by the
- *     level's time-limit rules; a client that tries to smuggle stars
- *     in the body is rejected at 400 by the ValidationPipe.
  *   - The completion timestamp comes from IClock, not the client, so
  *     runs cannot be backdated.
+ *   - The level's arrowCount is read from the persisted level, not
+ *     from the client, so a client cannot inflate its rating by
+ *     lying about how many arrows the board had.
  *
  * DIP: depends only on port abstractions (IProgressRepository,
  * ILevelRepository, IClock).
@@ -41,7 +54,11 @@ export class SubmitScoreUseCase
     if (level === null || !level.published) {
       throw new LevelNotFoundError(command.levelId);
     }
-    const stars = level.difficulty.starsFor(command.timeMs);
+    const arrowCount = level.board.arrows.length;
+    const blockedTaps = Math.max(0, command.moves - arrowCount);
+    const movesBased = Math.max(1, Math.min(3, 3 - blockedTaps));
+    const timeBased = level.difficulty.starsFor(command.timeMs);
+    const stars = Math.min(movesBased, timeBased);
     const score = new Score(command.moves, command.timeMs, stars);
     const progress = await this.progressRepo.findByUser(command.userId);
     progress.record(command.levelId, score, this.clock.now());
