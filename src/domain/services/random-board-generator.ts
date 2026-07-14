@@ -1,5 +1,6 @@
 import { ArrowPathInfo } from '../models/arrow-path-info';
 import { BoardLayout } from '../models/board-layout';
+import { CollectibleInfo } from '../models/collectible-info';
 import { BoardSolver } from './board-solver';
 import { IRandomSource } from './random-source';
 
@@ -29,50 +30,19 @@ interface DifficultyParams {
   maxArrows: number;
   minArrowLength: number;
   maxArrowLength: number;
-  /**
-   * At most this fraction of arrows may be activatable in the initial
-   * board state. A high value means the level is trivial (many arrows
-   * point out at once); a low value forces the player to plan a
-   * sequence.
-   */
   maxActivatableRatio: number;
+  minCollectibles: number;
+  maxCollectibles: number;
 }
 
 /**
  * RandomBoardGenerator — produces solver-verified, difficulty-scaled
- * random BoardLayouts.
- *
- * Algorithm (per attempt):
- *   1. Pick rows / cols / arrow count from the difficulty's range.
- *   2. For each arrow:
- *      a. Pick a random free start cell.
- *      b. Grow a Manhattan-1 non-crossing path up to the difficulty's
- *         max arrow length (random walk, backtracks on dead ends).
- *      c. Pick a color and set direction ALIGNED with the last
- *         segment — the head visually points away from the body, so
- *         the render looks intentional.
- *   3. Assemble BoardLayout; its invariants (bounds, no overlap,
- *      unique ids, path contiguity, non-crossing) fail-fast on any
- *      inconsistency.
- *   4. Ask BoardSolver.isSolvable — reject and retry if unwinnable.
- *   5. Difficulty gate: count how many arrows are activatable in the
- *      INITIAL state. Reject boards where too many are activatable at
- *      start (HARD demands planning; EASY has no gate).
- *
- * v2 vs v1: v1 shipped single-cell arrows only and had no difficulty
- * ratio filter, so a "HARD" board could randomly land on 5 arrows all
- * pointing outward — trivially solvable in five taps with any order.
- * v2 grows bent paths, packs more arrows on bigger boards, and
- * rejects boards whose initial activatable ratio exceeds the tier's
- * threshold. HARD now takes real planning.
- *
- * Framework-agnostic: constructor takes a BoardSolver and an
- * IRandomSource. Composition root wires DefaultRandomSource in
- * production; specs inject SeededRandomSource for reproducibility.
+ * random BoardLayouts (v3: with STAR collectibles).
  */
 export class RandomBoardGenerator {
   private static readonly MAX_BOARD_ATTEMPTS = 100;
   private static readonly MAX_ARROW_ATTEMPTS = 40;
+  private static readonly MAX_COLLECTIBLE_ATTEMPTS = 30;
   private static readonly PARAMS: Record<string, DifficultyParams> = {
     EASY: {
       minRows: 4,
@@ -84,6 +54,8 @@ export class RandomBoardGenerator {
       minArrowLength: 1,
       maxArrowLength: 2,
       maxActivatableRatio: 1.0,
+      minCollectibles: 0,
+      maxCollectibles: 2,
     },
     MEDIUM: {
       minRows: 5,
@@ -95,6 +67,8 @@ export class RandomBoardGenerator {
       minArrowLength: 1,
       maxArrowLength: 3,
       maxActivatableRatio: 0.7,
+      minCollectibles: 1,
+      maxCollectibles: 3,
     },
     HARD: {
       minRows: 6,
@@ -106,6 +80,8 @@ export class RandomBoardGenerator {
       minArrowLength: 1,
       maxArrowLength: 4,
       maxActivatableRatio: 0.4,
+      minCollectibles: 2,
+      maxCollectibles: 4,
     },
   };
 
@@ -132,7 +108,6 @@ export class RandomBoardGenerator {
       if (layout === null) continue;
       if (!this.solver.isSolvable(layout)) continue;
 
-      // Difficulty gate: enough arrows must be blocked at start.
       const activatable = this.countInitiallyActivatable(layout);
       const ratio = activatable / layout.arrows.length;
       if (ratio > params.maxActivatableRatio) continue;
@@ -159,11 +134,52 @@ export class RandomBoardGenerator {
       for (const cell of arrow.cells) occupied.add(cell);
     }
 
+    const collectibles = this.placeCollectibles(
+      rows,
+      cols,
+      occupied,
+      params,
+    );
+
     try {
-      return new BoardLayout({ rows, cols, arrows });
+      return new BoardLayout({ rows, cols, arrows, collectibles });
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Scatter STAR collectibles on random free cells. Difficulty-scaled
+   * target count; may fall short if the board is too dense to place
+   * more, which is fine — the game plays either way.
+   */
+  private placeCollectibles(
+    rows: number,
+    cols: number,
+    occupied: Set<string>,
+    params: DifficultyParams,
+  ): CollectibleInfo[] {
+    const target = this.randInclusive(
+      params.minCollectibles,
+      params.maxCollectibles,
+    );
+    if (target === 0) return [];
+
+    const collectibles: CollectibleInfo[] = [];
+    let attempts = 0;
+    while (
+      collectibles.length < target &&
+      attempts < RandomBoardGenerator.MAX_COLLECTIBLE_ATTEMPTS
+    ) {
+      attempts++;
+      const r = this.rng.nextInt(rows);
+      const c = this.rng.nextInt(cols);
+      const cell = `${r},${c}`;
+      if (occupied.has(cell)) continue;
+      occupied.add(cell);
+      collectibles.push(new CollectibleInfo(cell, 'STAR'));
+    }
+    return collectibles;
   }
 
   private tryPlaceArrow(
@@ -195,7 +211,7 @@ export class RandomBoardGenerator {
       const direction = this.pickHeadDirection(path);
 
       try {
-        return new ArrowPathInfo(`a${index + 1}`, color, path, direction);
+        return new ArrowPathInfo(`a${index + 1}`, color, [...path], direction);
       } catch {
         continue;
       }
@@ -203,11 +219,6 @@ export class RandomBoardGenerator {
     return null;
   }
 
-  /**
-   * Grow a Manhattan-1 non-crossing path via random walk. If the walker
-   * paints itself into a dead end before reaching targetLen, we accept
-   * the shorter path (still valid).
-   */
   private growPath(
     startCell: string,
     targetLen: number,
@@ -218,7 +229,9 @@ export class RandomBoardGenerator {
     const path = [startCell];
     const pathSet = new Set(path);
     while (path.length < targetLen) {
-      const [r, c] = path[path.length - 1].split(',').map((s) => parseInt(s, 10));
+      const [r, c] = path[path.length - 1]
+        .split(',')
+        .map((s) => parseInt(s, 10));
       const candidates: string[] = [];
       for (const d of DIRECTIONS) {
         const delta = DIRECTION_DELTAS[d];
@@ -237,18 +250,16 @@ export class RandomBoardGenerator {
     return path;
   }
 
-  /**
-   * Head direction aligned with the last segment of the path: the
-   * arrowhead points away from the body, so the render reads as a
-   * continuous snake ending in an arrow. For single-cell arrows any
-   * cardinal is valid (no body to align with).
-   */
   private pickHeadDirection(path: string[]): string {
     if (path.length === 1) {
       return DIRECTIONS[this.rng.nextInt(DIRECTIONS.length)];
     }
-    const [r1, c1] = path[path.length - 2].split(',').map((s) => parseInt(s, 10));
-    const [r2, c2] = path[path.length - 1].split(',').map((s) => parseInt(s, 10));
+    const [r1, c1] = path[path.length - 2]
+      .split(',')
+      .map((s) => parseInt(s, 10));
+    const [r2, c2] = path[path.length - 1]
+      .split(',')
+      .map((s) => parseInt(s, 10));
     const dr = r2 - r1;
     const dc = c2 - c1;
     if (dr === -1) return 'UP';
