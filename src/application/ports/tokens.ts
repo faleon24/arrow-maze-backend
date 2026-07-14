@@ -17,4 +17,4 @@ export const PROGRESS_REPOSITORY = Symbol('IProgressRepository');
 export const LEADERBOARD_REPOSITORY = Symbol('ILeaderboardRepository');
 export const SHOP_REPOSITORY = Symbol('IShopRepository');
 export const WALLET_REPOSITORY = Symbol('IWalletRepository');
-export const INVENTORY_REPOSITORY = Symbol('IInventoryRepository');
+export const INVENTORY_REPOSITORY = Symbol('IInventoryRepository');export const PURCHASE_STORE = Symbol('IPurchaseStore');

@@ -22,6 +22,7 @@ import {
   SHOP_REPOSITORY,
   WALLET_REPOSITORY,
   INVENTORY_REPOSITORY,
+  PURCHASE_STORE,
 } from './application/ports/tokens';
 // Application layer — use cases (framework-agnostic)
 import { RegisterUserUseCase } from './application/usecases/auth/register-user.usecase';
@@ -50,6 +51,7 @@ import { GetWalletUseCase } from './application/usecases/wallet/get-wallet.useca
 import { PurchaseItemUseCase } from './application/usecases/purchase/purchase-item.usecase';
 import { IWalletRepository } from './application/ports/out/wallet-repository.port';
 import { IInventoryRepository } from './application/ports/out/inventory-repository.port';
+import { IPurchaseStore } from './application/ports/out/purchase-store.port';
 // Infrastructure layer — concrete adapters
 import { PrismaService } from './infrastructure/persistence/prisma.service';
 import { PostgresUserRepository } from './infrastructure/persistence/postgres-user.repository';
@@ -63,6 +65,7 @@ import { PostgresLeaderboardRepository } from './infrastructure/persistence/post
 import { PostgresShopRepository } from './infrastructure/persistence/postgres-shop.repository';
 import { PostgresWalletRepository } from './infrastructure/persistence/postgres-wallet.repository';
 import { PostgresInventoryRepository } from './infrastructure/persistence/postgres-inventory.repository';
+import { PrismaPurchaseStore } from './infrastructure/persistence/prisma-purchase-store';
 // API layer — REST controllers
 import { AuthController } from './api/auth/auth.controller';
 import { LevelsController } from './api/levels/levels.controller';
@@ -274,6 +277,10 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
   useClass: PostgresInventoryRepository,
 },
 {
+  provide: PURCHASE_STORE,
+  useClass: PrismaPurchaseStore,
+},
+{
   provide: GetWalletUseCase,
   useFactory: (wallets: IWalletRepository) =>
     withLogging(new GetWalletUseCase(wallets), 'GetWalletUseCase'),
@@ -285,12 +292,13 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
     shop: IShopRepository,
     wallets: IWalletRepository,
     inventories: IInventoryRepository,
+    store: IPurchaseStore,
   ) =>
     withLogging(
-      new PurchaseItemUseCase(shop, wallets, inventories),
+      new PurchaseItemUseCase(shop, wallets, inventories, store),
       'PurchaseItemUseCase',
     ),
-  inject: [SHOP_REPOSITORY, WALLET_REPOSITORY, INVENTORY_REPOSITORY],
+  inject: [SHOP_REPOSITORY, WALLET_REPOSITORY, INVENTORY_REPOSITORY, PURCHASE_STORE],
 },
     // ------------------------------------------------------------------
     // Application use cases — wired via factory so they stay
