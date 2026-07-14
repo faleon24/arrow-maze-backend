@@ -9,33 +9,7 @@ import {
   MediumProfile,
   HardProfile,
 } from '../src/domain/models/difficulty-profile';
-/**
- * Database seed for the level catalog.
- *
- * Every level is built as a real domain aggregate (Level + BoardLayout
- * + ArrowPathInfo + DifficultyProfile) and persisted through the actual
- * PostgresLevelRepository — never with raw SQL. This means each seeded
- * level passes the exact same domain validation as production writes:
- * an invalid board (overlapping arrows, a segment off the grid, a
- * non-contiguous path) would fail HERE, at construction, instead of
- * inserting corrupt data. The seed is therefore a guarantee that the
- * starting catalog is valid by construction.
- *
- * Fixed UUIDs make the seed idempotent: save() upserts by id, so
- * running it repeatedly refreshes these three levels rather than
- * accumulating duplicates. Fase 8 replaces this transitional 3-level
- * catalog with a hand-crafted 15-level one across three difficulties.
- *
- * Shop items are seeded alongside levels using canonical UUIDv4 ids
- * so future admin/purchase DTOs validating @IsUUID('4') accept them.
- */
 
-/**
- * Level 1 (EASY) — a 2x2 board where every arrow points straight off
- * the edge. All four are clearable from the start, in any order. The
- * gentlest possible introduction to the "tap an arrow to fire its ray
- * off the board" mechanic.
- */
 function buildLevelOne(): Level {
   const board = new BoardLayout({
     rows: 2,
@@ -48,7 +22,7 @@ function buildLevelOne(): Level {
     ],
   });
   return new Level({
-    id: '00000000-0000-0000-0000-000000000001',
+    id: '11111111-1111-4111-8111-111111111111',
     index: 0,
     difficulty: new EasyProfile(),
     board,
@@ -56,13 +30,7 @@ function buildLevelOne(): Level {
     published: true,
   });
 }
-/**
- * Level 2 (MEDIUM) — a 3x3 board that introduces blocking. In the top
- * row, two right-pointing arrows sit in a line: the inner one (0,0) is
- * blocked by the outer one (0,1), so the outer must be cleared first.
- * The right column clears downward with the same pattern. Teaches
- * "clear the outer arrow to free the inner one".
- */
+
 function buildLevelTwo(): Level {
   const board = new BoardLayout({
     rows: 3,
@@ -76,7 +44,7 @@ function buildLevelTwo(): Level {
     ],
   });
   return new Level({
-    id: '00000000-0000-0000-0000-000000000002',
+    id: '22222222-2222-4222-8222-222222222222',
     index: 1,
     difficulty: new MediumProfile(),
     board,
@@ -105,7 +73,7 @@ function buildLevelThree(): Level {
     ],
   });
   return new Level({
-    id: '00000000-0000-0000-0000-000000000003',
+    id: '33333333-3333-4333-8333-333333333333',
     index: 2,
     difficulty: new HardProfile(),
     board,
