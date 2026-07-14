@@ -8,6 +8,7 @@ import {
   Wallet,
 } from '../../../../src/domain/models/wallet';
 import { IInventoryRepository } from '../../../../src/application/ports/out/inventory-repository.port';
+import { IPurchaseStore } from '../../../../src/application/ports/out/purchase-store.port';
 import { IShopRepository } from '../../../../src/application/ports/out/shop-repository.port';
 import { IWalletRepository } from '../../../../src/application/ports/out/wallet-repository.port';
 import {
@@ -29,8 +30,8 @@ describe('PurchaseItemUseCase', () => {
   let shopRepo: IShopRepository;
   let walletRepo: IWalletRepository;
   let inventoryRepo: IInventoryRepository;
-  let saveInventoryMock: jest.Mock;
-  let saveWalletMock: jest.Mock;
+  let store: IPurchaseStore;
+  let commitMock: jest.Mock;
   let useCase: PurchaseItemUseCase;
 
   const setup = (opts: {
@@ -43,22 +44,28 @@ describe('PurchaseItemUseCase', () => {
       findAll: jest.fn(),
     } as unknown as IShopRepository;
 
-    saveWalletMock = jest.fn().mockResolvedValue(undefined);
     walletRepo = {
       findByUser: jest.fn().mockResolvedValue(opts.wallet ?? null),
-      save: saveWalletMock,
+      save: jest.fn().mockResolvedValue(undefined),
     } as unknown as IWalletRepository;
 
-    saveInventoryMock = jest.fn().mockResolvedValue(undefined);
     inventoryRepo = {
       findByUser: jest.fn().mockResolvedValue(opts.inventory ?? null),
-      save: saveInventoryMock,
+      save: jest.fn().mockResolvedValue(undefined),
     } as unknown as IInventoryRepository;
 
-    useCase = new PurchaseItemUseCase(shopRepo, walletRepo, inventoryRepo);
+    commitMock = jest.fn().mockResolvedValue(undefined);
+    store = { commit: commitMock } as IPurchaseStore;
+
+    useCase = new PurchaseItemUseCase(
+      shopRepo,
+      walletRepo,
+      inventoryRepo,
+      store,
+    );
   };
 
-  it('should_debit_wallet_and_add_to_inventory_when_purchase_succeeds', async () => {
+  it('should_commit_wallet_and_inventory_atomically_when_purchase_succeeds', async () => {
     setup({
       item: buildItem({ cost: 50 }),
       wallet: new Wallet({ userId: 'user-1', balance: 100 }),
@@ -67,33 +74,25 @@ describe('PurchaseItemUseCase', () => {
 
     await useCase.execute({ userId: 'user-1', itemId: 'item-1' });
 
-    expect(saveInventoryMock).toHaveBeenCalledTimes(1);
-    expect(saveWalletMock).toHaveBeenCalledTimes(1);
-
-    const savedInventory: Inventory =
-      saveInventoryMock.mock.calls[0][0];
-    const savedWallet: Wallet = saveWalletMock.mock.calls[0][0];
-
-    expect(savedInventory.owns('item-1')).toBe(true);
-    expect(savedWallet.balance).toBe(50);
+    expect(commitMock).toHaveBeenCalledTimes(1);
+    const [walletArg, inventoryArg]: [Wallet, Inventory] =
+      commitMock.mock.calls[0];
+    expect(walletArg.balance).toBe(50);
+    expect(inventoryArg.owns('item-1')).toBe(true);
   });
 
-  it('should_save_inventory_before_wallet', async () => {
-    const callOrder: string[] = [];
+  it('should_not_touch_the_aggregate_save_methods_when_committing_atomically', async () => {
     setup({
-      item: buildItem(),
+      item: buildItem({ cost: 10 }),
       wallet: new Wallet({ userId: 'user-1', balance: 100 }),
-    });
-    (inventoryRepo.save as jest.Mock).mockImplementation(async () => {
-      callOrder.push('inventory');
-    });
-    (walletRepo.save as jest.Mock).mockImplementation(async () => {
-      callOrder.push('wallet');
     });
 
     await useCase.execute({ userId: 'user-1', itemId: 'item-1' });
 
-    expect(callOrder).toEqual(['inventory', 'wallet']);
+    // Aggregate ports are read-only during a purchase now; all writes
+    // go through IPurchaseStore.commit.
+    expect(walletRepo.save).not.toHaveBeenCalled();
+    expect(inventoryRepo.save).not.toHaveBeenCalled();
   });
 
   it('should_throw_ItemNotFoundError_when_item_does_not_exist', async () => {
@@ -102,9 +101,7 @@ describe('PurchaseItemUseCase', () => {
     await expect(
       useCase.execute({ userId: 'user-1', itemId: 'ghost' }),
     ).rejects.toThrow(ItemNotFoundError);
-
-    expect(saveInventoryMock).not.toHaveBeenCalled();
-    expect(saveWalletMock).not.toHaveBeenCalled();
+    expect(commitMock).not.toHaveBeenCalled();
   });
 
   it('should_throw_AlreadyOwnedError_when_user_already_owns_the_item', async () => {
@@ -117,9 +114,7 @@ describe('PurchaseItemUseCase', () => {
     await expect(
       useCase.execute({ userId: 'user-1', itemId: 'item-1' }),
     ).rejects.toThrow(AlreadyOwnedError);
-
-    expect(saveInventoryMock).not.toHaveBeenCalled();
-    expect(saveWalletMock).not.toHaveBeenCalled();
+    expect(commitMock).not.toHaveBeenCalled();
   });
 
   it('should_throw_InsufficientBalanceError_when_wallet_lacks_funds', async () => {
@@ -131,9 +126,7 @@ describe('PurchaseItemUseCase', () => {
     await expect(
       useCase.execute({ userId: 'user-1', itemId: 'item-1' }),
     ).rejects.toThrow(InsufficientBalanceError);
-
-    expect(saveInventoryMock).not.toHaveBeenCalled();
-    expect(saveWalletMock).not.toHaveBeenCalled();
+    expect(commitMock).not.toHaveBeenCalled();
   });
 
   it('should_default_to_empty_wallet_when_user_has_no_prior_row', async () => {
@@ -141,12 +134,12 @@ describe('PurchaseItemUseCase', () => {
       item: buildItem({ cost: 10 }),
       wallet: null,
     });
-
     // Empty wallet has balance 0 → InsufficientBalanceError fires
     // when we try to debit any positive cost.
     await expect(
       useCase.execute({ userId: 'user-1', itemId: 'item-1' }),
     ).rejects.toThrow(InsufficientBalanceError);
+    expect(commitMock).not.toHaveBeenCalled();
   });
 
   it('should_default_to_empty_inventory_when_user_has_no_prior_row', async () => {
@@ -158,9 +151,8 @@ describe('PurchaseItemUseCase', () => {
 
     await useCase.execute({ userId: 'user-1', itemId: 'item-1' });
 
-    const savedInventory: Inventory =
-      saveInventoryMock.mock.calls[0][0];
-    expect(savedInventory.owns('item-1')).toBe(true);
-    expect(savedInventory.size).toBe(1);
+    const [, inventoryArg]: [Wallet, Inventory] = commitMock.mock.calls[0];
+    expect(inventoryArg.owns('item-1')).toBe(true);
+    expect(inventoryArg.size).toBe(1);
   });
 });
