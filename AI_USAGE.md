@@ -1025,3 +1025,43 @@ Backend final state after this round: 358 unit tests / 51 e2e tests all green, 3
 - **`min(axisA, axisB)` is the right composition for multi-axis grading**. Clients expect BOTH axes to matter — a slow perfect run and a fast messy run should each be capped, not one bailing out the other. `min` says "you did as well as your worst axis"; `max` would let one axis paper over the other.
 - **Playtest is the difficulty spec, not the generator's params**. HARD landing on 5 outward-pointing arrows passed the solver (trivially, in that any order works) and passed the generator's arrow-count check (5 ∈ [5, 8]). Only a human playing the level surfaces the "this is not hard" signal. Whenever the generator's config decouples from felt difficulty, the fix goes in the ratio filter, not the params.
 - **DB reseed idempotency is fragile without a wipe step**. `SeededUuidGenerator` + `SeededRandomSource` make the seed reproducible on a CLEAN DB, but any leftover row (from a button-generated level, from a stale prior seed) breaks the index-allocation assumption and collides on the unique constraint. Documenting "`prisma migrate reset --force --skip-seed` before rerunning seed if the DB has mutations" is the current escape hatch; a future revision could wrap `TRUNCATE ... CASCADE` in the seed itself.
+
+---
+
+## Entry 28 — Backend hardening: unified DI tokens + atomic purchase transaction
+
+**Date**: 2026-07-13
+**Tool**: Claude Opus 4.7 (via Cowork desktop app)
+**Task**: Two pieces of long-standing debt from HANDOFF 9's §3 came due at once. First, the DI token convention was mixed — `USER_REPOSITORY = Symbol('IUserRepository')` for the older tokens vs `WALLET_REPOSITORY = 'WALLET_REPOSITORY'` (string) for the fase 6-7 additions; harmless in practice but visibly inconsistent. Second, `PurchaseItemUseCase` executed `inventory.save()` followed by `wallet.save()` without wrapping them in `$transaction`, so a failure between the two would leave the player with an item without paying (or the reverse). Both landed as separate atomic commits.
+
+**Prompt (paraphrased)**: Convert the four string tokens to symbols, verify no consumer hardcoded the string literal (should be zero — everyone imports the constant). Then introduce a new `IPurchaseStore` port with a single `commit(wallet, inventory)` method whose Prisma adapter wraps both writes in `prisma.$transaction(async (tx) => ...)`. `PurchaseItemUseCase` keeps its domain logic (fetch, validate, mutate) but replaces the two `.save()` calls with one `store.commit(wallet, inventory)`.
+
+**Result**: Two commits, both merged.
+
+- **`refactor(ports): unify DI token type as symbol across all repositories`** (merged as `5f9ad4b`): four `export const XXX_REPOSITORY = 'XXX_REPOSITORY'` lines rewritten as `export const XXX_REPOSITORY = Symbol('IXxxRepository')`. Grep confirmed zero hardcoded string references outside the tokens file. TypeScript compiled clean; 358 unit + 51 e2e still green — the DI resolves by identity, not string content, so a Symbol swap is transparent to `@Inject`.
+
+- **`feat(persistence): atomic purchase via IPurchaseStore wrapping tx`** (merged as `38c2c92`): new port `IPurchaseStore` in `src/application/ports/out/`, new implementation `PrismaPurchaseStore` in `src/infrastructure/persistence/`. Port bound with a new `PURCHASE_STORE` symbol token. `PurchaseItemUseCase` gains a 4th constructor param, factory in `app.module.ts` updated (Python patch — regex asserts on match count so a silent no-op fails the batch). `PostgresWalletRepository.save` and `PostgresInventoryRepository.save` untouched — the atomic write is a separate concern behind its own port. Spec rewritten: `saveInventoryMock` + `saveWalletMock` replaced with a single `commitMock`; ordering test removed (irrelevant now), replaced with "should_commit_atomically" and "should_not_touch_aggregate_save_methods_when_committing_atomically" checks. `progress.e2e-spec.ts` `validRun.moves` adjusted from 12 to 1 so the 3-star assertion still holds under Entry 27's moves-based scoring.
+
+**Files affected**: `src/application/ports/tokens.ts` (both commits), `src/application/ports/out/purchase-store.port.ts` (new), `src/infrastructure/persistence/prisma-purchase-store.ts` (new), `src/application/usecases/purchase/purchase-item.usecase.ts` (4th param), `src/app.module.ts` (import + provider + factory update), `test/application/usecases/purchase/purchase-item.usecase.spec.ts` (rewritten around new commit-based fake), `test/api/progress/progress.e2e-spec.ts` (moves value fix).
+
+**Modifications made by the developer**: pushed for a NEW port (`IPurchaseStore`) rather than adding an atomic method to `IWalletRepository` — the transaction concern is cross-cutting and doesn't belong on either aggregate's port. Chose to duplicate the wallet+inventory writes inside `PrismaPurchaseStore` rather than share code with the aggregate adapters; the SQL each side issues is identical, but the transaction context differs.
+
+**Lessons learned**: two-write consistency is one of those "obviously wrong" gaps that ships fine on happy paths and blows up during rare failures. Wrapping in a single Prisma callback is 5 lines and eliminates the whole class of partial-write bug. Worth the port surface. String-vs-Symbol token consistency also worth doing while touching the file — future contributors reading the file don't have to wonder why two conventions coexist.
+
+---
+
+## Entry 29 — Backend: STAR collectibles seeded by the random generator
+
+**Date**: 2026-07-14
+**Tool**: Claude Opus 4.7 (via Cowork desktop app)
+**Task**: `CollectibleInfo` value objects and the `BoardLayout.collectibles` array existed in the domain since fase 4, but the `RandomBoardGenerator` never produced any — every procedurally-generated board had `collectibles: []`. Enunciado §1.1 mentions coleccionables as a game element; the game_session was already picking them up via ray-tracing (see `_clearArrow`), so all that was missing was placement.
+
+**Prompt (paraphrased)**: Extend `DifficultyParams` with `minCollectibles` / `maxCollectibles` (EASY 0-2, MEDIUM 1-3, HARD 2-4). After placing arrows, `placeCollectibles(rows, cols, occupied, params)` tries `MAX_COLLECTIBLE_ATTEMPTS=30` random cells, skips occupied ones, adds a `CollectibleInfo(cell, 'STAR')` for each free one until reaching the target. Layout construction includes collectibles; downstream (BoardLayout invariants, serialization, GameSession pickup) already handles them.
+
+**Result**: One commit (merged as `61a1f5d`). Generator v3 code — same greedy attempt loop as v2 but with a `placeCollectibles` step between arrow placement and layout construction. Backend re-seeded via `npx prisma migrate reset --force --skip-seed` + `npx ts-node prisma/seed.ts`. Distribution verified via `curl /api/levels | python3`: 30 levels total, ~85% now carry at least one STAR, average ~2 per HARD level. App renders them via existing `CellWidget` STAR path with no changes (see app Entry 11 for the AppBar chip that surfaces the count during play).
+
+**Files affected**: `src/domain/services/random-board-generator.ts` (v3 — added `MAX_COLLECTIBLE_ATTEMPTS`, `minCollectibles`/`maxCollectibles` params, `placeCollectibles` method).
+
+**Modifications made by the developer**: kept `placeCollectibles` after `tryPlaceArrow` so arrows always own their turf first and collectibles fill remaining cells — mirrors the reference game's visual where stars sit in negative space. Difficulty-scaled counts because HARD boards are bigger and can host more stars without visual clutter.
+
+**Lessons learned**: check the domain before adding UI. When `GameSession._clearArrow` was already scanning for `collectibleAt(next)` and populating `collectedPositions`, the missing piece was a placement policy, not a game-mechanic change. One method's 15 lines closed the gap end to end.
