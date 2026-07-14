@@ -9,12 +9,7 @@ import { ArrowPathInfo } from '../../../../src/domain/models/arrow-path-info';
 import { EasyProfile } from '../../../../src/domain/models/difficulty-profile';
 import { LevelNotFoundError } from '../../../../src/domain/errors/level-not-found.error';
 import { SubmitScoreCommand } from '../../../../src/application/usecases/progress/submit-score.command';
-/**
- * Hand-written fake of IProgressRepository backed by an in-memory map
- * keyed by userId. Contract-preserving: findByUser returns an empty
- * aggregate for unknown users, never null. save records what it
- * persisted so tests can assert on it.
- */
+
 class FakeProgressRepository implements IProgressRepository {
   private store = new Map<string, PlayerProgress>();
   public savedProgress: PlayerProgress | null = null;
@@ -27,11 +22,7 @@ class FakeProgressRepository implements IProgressRepository {
     return Promise.resolve();
   }
 }
-/**
- * Fake ILevelRepository: findById returns the seeded level or null.
- * The other methods throw if unexpectedly called, so a test that hits
- * the wrong query surfaces loudly instead of passing silently.
- */
+
 class FakeLevelRepository implements ILevelRepository {
   private levels = new Map<string, Level>();
   seed(level: Level): void {
@@ -50,13 +41,16 @@ class FakeLevelRepository implements ILevelRepository {
     throw new Error('save not expected in this test');
   }
 }
+
 class FixedClock implements IClock {
   constructor(private readonly instant: Date) {}
   now(): Date {
     return this.instant;
   }
 }
+
 const FIXED_NOW = new Date('2026-03-03T12:00:00.000Z');
+
 function buildLevel(
   overrides: Partial<{ id: string; published: boolean }> = {},
 ): Level {
@@ -73,19 +67,21 @@ function buildLevel(
     published: overrides.published ?? true,
   });
 }
+
 function buildCommand(
   overrides: Partial<SubmitScoreCommand> = {},
 ): SubmitScoreCommand {
   return {
     userId: overrides.userId ?? 'user-1',
     levelId: overrides.levelId ?? 'level-1',
-    moves: overrides.moves ?? 10,
+    moves: overrides.moves ?? 1,
     timeMs: overrides.timeMs ?? 60_000,
   };
 }
+
 describe('SubmitScoreUseCase', () => {
-  it('should_compute_stars_from_time_using_the_levels_difficulty_profile', async () => {
-    // Arrange — EasyProfile: 3 stars if <= 120s, 2 if <= 240s, else 1.
+  it('should_award_full_stars_when_no_blocked_taps_and_fast_time', async () => {
+    // Arrange — 1 arrow, moves=1 (no blocks), 60s on Easy (<=120s).
     const progressRepo = new FakeProgressRepository();
     const levelRepo = new FakeLevelRepository();
     levelRepo.seed(buildLevel());
@@ -94,16 +90,19 @@ describe('SubmitScoreUseCase', () => {
       new FixedClock(FIXED_NOW),
       levelRepo,
     );
-    // Act — 60s run on Easy → 3 stars.
-    const progress = await useCase.execute(buildCommand({ timeMs: 60_000 }));
+    // Act
+    const progress = await useCase.execute(
+      buildCommand({ moves: 1, timeMs: 60_000 }),
+    );
     // Assert
     const entry = progress.bestFor('level-1');
     expect(entry).not.toBeNull();
     expect(entry!.attempts).toBe(1);
     expect(entry!.bestScore.stars).toBe(3);
   });
-  it('should_persist_the_progress_through_the_repository', async () => {
-    // Arrange
+
+  it('should_reduce_stars_by_blocked_taps_when_moves_exceed_arrow_count', async () => {
+    // Arrange — 1 arrow, moves=3 → 2 blocked taps → movesBased = 1.
     const progressRepo = new FakeProgressRepository();
     const levelRepo = new FakeLevelRepository();
     levelRepo.seed(buildLevel());
@@ -113,13 +112,65 @@ describe('SubmitScoreUseCase', () => {
       levelRepo,
     );
     // Act
-    await useCase.execute(buildCommand());
+    const progress = await useCase.execute(
+      buildCommand({ moves: 3, timeMs: 60_000 }),
+    );
+    // Assert — 2 blocked taps caps stars at 1 regardless of fast time.
+    expect(progress.bestFor('level-1')!.bestScore.stars).toBe(1);
+  });
+
+  it('should_award_two_stars_when_exactly_one_blocked_tap_and_fast_time', async () => {
+    // Arrange — 1 arrow, moves=2 → 1 blocked → movesBased=2.
+    const progressRepo = new FakeProgressRepository();
+    const levelRepo = new FakeLevelRepository();
+    levelRepo.seed(buildLevel());
+    const useCase = new SubmitScoreUseCase(
+      progressRepo,
+      new FixedClock(FIXED_NOW),
+      levelRepo,
+    );
+    // Act
+    const progress = await useCase.execute(
+      buildCommand({ moves: 2, timeMs: 60_000 }),
+    );
     // Assert
+    expect(progress.bestFor('level-1')!.bestScore.stars).toBe(2);
+  });
+
+  it('should_take_worst_of_moves_and_time_when_both_are_suboptimal', async () => {
+    // Arrange — 1 blocked tap (movesBased=2) AND slow time (Easy
+    // returns 1 star for 300s). min(2, 1) = 1.
+    const progressRepo = new FakeProgressRepository();
+    const levelRepo = new FakeLevelRepository();
+    levelRepo.seed(buildLevel());
+    const useCase = new SubmitScoreUseCase(
+      progressRepo,
+      new FixedClock(FIXED_NOW),
+      levelRepo,
+    );
+    // Act
+    const progress = await useCase.execute(
+      buildCommand({ moves: 2, timeMs: 300_000 }),
+    );
+    // Assert
+    expect(progress.bestFor('level-1')!.bestScore.stars).toBe(1);
+  });
+
+  it('should_persist_the_progress_through_the_repository', async () => {
+    const progressRepo = new FakeProgressRepository();
+    const levelRepo = new FakeLevelRepository();
+    levelRepo.seed(buildLevel());
+    const useCase = new SubmitScoreUseCase(
+      progressRepo,
+      new FixedClock(FIXED_NOW),
+      levelRepo,
+    );
+    await useCase.execute(buildCommand());
     expect(progressRepo.savedProgress).not.toBeNull();
     expect(progressRepo.savedProgress!.userId).toBe('user-1');
   });
+
   it('should_stamp_the_completion_with_the_clock_time_not_the_client', async () => {
-    // Arrange
     const progressRepo = new FakeProgressRepository();
     const levelRepo = new FakeLevelRepository();
     levelRepo.seed(buildLevel());
@@ -128,11 +179,10 @@ describe('SubmitScoreUseCase', () => {
       new FixedClock(FIXED_NOW),
       levelRepo,
     );
-    // Act
     const progress = await useCase.execute(buildCommand());
-    // Assert
     expect(progress.bestFor('level-1')!.completedAt).toEqual(FIXED_NOW);
   });
+
   it('should_keep_the_better_score_when_a_slower_run_is_submitted', async () => {
     // Arrange
     const progressRepo = new FakeProgressRepository();
@@ -143,16 +193,18 @@ describe('SubmitScoreUseCase', () => {
       new FixedClock(FIXED_NOW),
       levelRepo,
     );
-    // Act — first run fast (60s → 3 stars on Easy), then slow (300s → 1 star)
-    await useCase.execute(buildCommand({ timeMs: 60_000 }));
-    const progress = await useCase.execute(buildCommand({ timeMs: 300_000 }));
-    // Assert — best of 3 stars kept, both attempts counted
+    // Act — first run clean (3 stars), then messy (1 star).
+    await useCase.execute(buildCommand({ moves: 1, timeMs: 60_000 }));
+    const progress = await useCase.execute(
+      buildCommand({ moves: 10, timeMs: 300_000 }),
+    );
+    // Assert — best of 3 stars kept, both attempts counted.
     const entry = progress.bestFor('level-1');
     expect(entry!.bestScore.stars).toBe(3);
     expect(entry!.attempts).toBe(2);
   });
+
   it('should_throw_LevelNotFoundError_when_the_level_does_not_exist', async () => {
-    // Arrange — level repo empty
     const progressRepo = new FakeProgressRepository();
     const levelRepo = new FakeLevelRepository();
     const useCase = new SubmitScoreUseCase(
@@ -160,13 +212,12 @@ describe('SubmitScoreUseCase', () => {
       new FixedClock(FIXED_NOW),
       levelRepo,
     );
-    // Act & Assert
     await expect(
       useCase.execute(buildCommand({ levelId: 'ghost' })),
     ).rejects.toBeInstanceOf(LevelNotFoundError);
   });
+
   it('should_throw_LevelNotFoundError_when_the_level_exists_but_is_unpublished', async () => {
-    // Arrange — level exists but is a draft; players should not see it.
     const progressRepo = new FakeProgressRepository();
     const levelRepo = new FakeLevelRepository();
     levelRepo.seed(buildLevel({ id: 'draft', published: false }));
@@ -175,7 +226,6 @@ describe('SubmitScoreUseCase', () => {
       new FixedClock(FIXED_NOW),
       levelRepo,
     );
-    // Act & Assert
     await expect(
       useCase.execute(buildCommand({ levelId: 'draft' })),
     ).rejects.toBeInstanceOf(LevelNotFoundError);
