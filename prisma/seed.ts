@@ -9,6 +9,31 @@ import {
   MediumProfile,
   HardProfile,
 } from '../src/domain/models/difficulty-profile';
+import { BoardSolver } from '../src/domain/services/board-solver';
+import { RandomBoardGenerator } from '../src/domain/services/random-board-generator';
+import { SeededRandomSource } from '../src/domain/services/random-source';
+import { GenerateLevelUseCase } from '../src/application/usecases/levels/generate-level.usecase';
+import { IIdGenerator } from '../src/application/ports/out/id-generator.port';
+
+/**
+ * SeededUuidGenerator — deterministic v4-format UUID sequence for the
+ * seed script. Same run number always produces the same UUID, so
+ * repeated `npx prisma db seed` calls upsert the same rows instead of
+ * accumulating duplicates. Prefix `abcdef00-...` guarantees zero
+ * collision with the hand-crafted UUIDs (11111.../22222.../33333...).
+ *
+ * NOT for production use — a real UUID generator (crypto-random) lives
+ * behind the IIdGenerator port in the running application.
+ */
+class SeededUuidGenerator implements IIdGenerator {
+  private counter = 0;
+
+  generate(): string {
+    this.counter += 1;
+    const hex = this.counter.toString(16).padStart(12, '0');
+    return `abcdef00-0000-4000-8000-${hex}`;
+  }
+}
 
 function buildLevelOne(): Level {
   const board = new BoardLayout({
@@ -52,11 +77,12 @@ function buildLevelTwo(): Level {
     published: true,
   });
 }
+
 /**
  * Level 3 (HARD) — a 4x4 board with multiple blocking chains. A valid
  * clearing sequence exists (release edge-facing arrows first to open
  * lanes, then the inner ones), but no single obvious first move solves
- * it. The seed test in Fase 8 will pin this via BoardSolver.
+ * it.
  */
 function buildLevelThree(): Level {
   const board = new BoardLayout({
@@ -85,8 +111,6 @@ function buildLevelThree(): Level {
 /**
  * Initial shop catalog. Canonical UUIDv4 ids so purchase DTOs that
  * validate @IsUUID('4') downstream accept them without a re-seed.
- * Kept small (3 items across the two whitelisted kinds); Fase 8+ can
- * expand as gameplay features land.
  */
 const shopItems = [
   {
@@ -113,18 +137,54 @@ async function main(): Promise<void> {
   const prisma = new PrismaService();
   await prisma.$connect();
 
-  // Levels — built via domain constructors so invariants are enforced.
   const repository = new PostgresLevelRepository(prisma);
-  const levels = [buildLevelOne(), buildLevelTwo(), buildLevelThree()];
-  for (const level of levels) {
+
+  // --- 1. Hand-crafted levels (indices 0-2, canonical UUIDs) ---
+  const handCrafted = [buildLevelOne(), buildLevelTwo(), buildLevelThree()];
+  for (const level of handCrafted) {
     await repository.save(level);
     console.log(
-      `Seeded level index=${level.index} difficulty=${level.difficulty.label()} id=${level.id}`,
+      `Seeded hand-crafted level index=${level.index} difficulty=${level.difficulty.label()} id=${level.id}`,
     );
   }
-  console.log(`Done. ${levels.length} levels seeded.`);
 
-  // Shop items — upsert-by-id so the seed is idempotent.
+  // --- 2. Procedurally generated levels (indices 3-29) ---
+  //
+  // 9 EASY + 9 MEDIUM + 9 HARD = 27 additional puzzles. Board layouts
+  // come from SeededRandomSource(20260713) so every run of this script
+  // produces the identical batch; UUIDs come from SeededUuidGenerator
+  // so the repository upserts the same 27 rows instead of accumulating
+  // duplicates. The whole seed is therefore idempotent under repeated
+  // `npx prisma db seed` calls.
+  const generator = new RandomBoardGenerator(
+    new BoardSolver(),
+    new SeededRandomSource(20_260_713),
+  );
+  const generatedIdGen = new SeededUuidGenerator();
+  const generateLevel = new GenerateLevelUseCase(
+    repository,
+    generator,
+    generatedIdGen,
+  );
+
+  const plan: string[] = [
+    ...Array(9).fill('EASY'),
+    ...Array(9).fill('MEDIUM'),
+    ...Array(9).fill('HARD'),
+  ];
+
+  for (const difficulty of plan) {
+    const level = await generateLevel.execute({ difficulty });
+    console.log(
+      `Generated level index=${level.index} difficulty=${level.difficulty.label()} arrows=${level.board.arrows.length} id=${level.id}`,
+    );
+  }
+
+  console.log(
+    `Levels done. ${handCrafted.length + plan.length} total (${handCrafted.length} hand-crafted + ${plan.length} generated).`,
+  );
+
+  // --- 3. Shop items (upsert-by-id, unchanged) ---
   for (const item of shopItems) {
     await prisma.shopItem.upsert({
       where: { id: item.id },
@@ -136,6 +196,7 @@ async function main(): Promise<void> {
 
   await prisma.$disconnect();
 }
+
 main().catch((error) => {
   console.error('Seed failed:', error);
   throw error;
