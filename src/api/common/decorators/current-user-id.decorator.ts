@@ -12,7 +12,7 @@ import { Request } from 'express';
  * Kept intentionally tiny: it does NOT re-validate the token. The
  * guard is the single source of truth for authentication; this
  * decorator only surfaces the identity the guard produced. This is
- * the same separation-of-concerns rationale that made LoggingInterceptor
+ * the same separation-of-concerns rationale that motivates the LoggingUseCaseDecorator
  * and DomainExceptionFilter their own aspects: infrastructure noise
  * out of the handler, so the controller body reads like intent.
  */
