@@ -1,6 +1,5 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { DomainExceptionFilter } from './api/filters/domain-exception.filter';
-import { LoggingInterceptor } from './api/interceptors/logging.interceptor';
 
 /**
  * configureApp — single source of truth for cross-cutting app config.
@@ -8,7 +7,7 @@ import { LoggingInterceptor } from './api/interceptors/logging.interceptor';
  * Both the production bootstrap (main.ts) and the e2e specs call this
  * so tests observe the exact same pipeline as a real client would:
  * CORS → global prefix → ValidationPipe → DomainExceptionFilter →
- * LoggingInterceptor → shutdown hooks. Before this refactor every
+ * LoggingUseCaseDecorator → shutdown hooks. Before this refactor every
  * e2e spec repeated a partial subset by hand and inevitably drifted
  * (main.ts had the interceptor and CORS; the specs did not). Now
  * every cross-cutting concern lives here — one command, DRY, no drift.
@@ -33,7 +32,6 @@ export function configureApp(app: INestApplication): void {
     }),
   );
   app.useGlobalFilters(new DomainExceptionFilter());
-  app.useGlobalInterceptors(new LoggingInterceptor());
   // SIGTERM/SIGINT → PrismaService.onModuleDestroy → clean DB close.
   app.enableShutdownHooks();
 }
