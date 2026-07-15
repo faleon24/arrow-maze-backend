@@ -72,11 +72,11 @@ Cross-cutting concerns are applied with the **Decorator** pattern rather than Ne
 
 | Aspect | Concern | Applied via |
 |---|---|---|
-| **Logging** | Structured entry / exit / duration / error logging around all 12 use cases | `LoggingUseCaseDecorator` + `withLogging(...)` in `AppModule` |
-| **Security** | Reject unauthenticated calls before the use case runs | `AuthCheckDecorator` + `withAuth(...)` |
-| **Caching** | TTL cache for read-heavy queries (leaderboard, level list) keyed by command | `CachingDecorator` + `withCache(...)` |
+| **Logging** | Structured entry / exit / duration / error logging around all 12 use cases | [`LoggingUseCaseDecorator`](src/application/decorators/logging-use-case.decorator.ts) + `withLogging(...)` in `AppModule` |
+| **Authorization** | Reject an unauthenticated subject before a protected use case runs (defence-in-depth beside the API guard); wraps `GetProgress` and `GetWallet` | [`AuthCheckUseCaseDecorator`](src/application/decorators/auth-check-use-case.decorator.ts) + `withAuth(...)`, backed by the [`IAuthChecker`](src/application/ports/out/auth-checker.port.ts) port |
+| **Caching** | 30s TTL memoisation of the read-only user-profile lookup (`GetUserById`, hit on every authenticated request), keyed by command | [`CachingUseCaseDecorator`](src/application/decorators/caching-use-case.decorator.ts) + `withCache(...)` |
 
-> All three decorators share the same `UseCase<C, R>` contract from [`application/usecases/use-case.ts`](src/application/usecases/use-case.ts), so they stack in any order at composition time.
+> All three decorators share the same `UseCase<C, R>` contract from [`application/usecases/use-case.ts`](src/application/usecases/use-case.ts), so they stack in any order at composition time (each protected use case is `withLogging(withAuth(...))` or `withLogging(withCache(...))`). Each decorator is unit-tested in isolation with fakes under [`test/application/decorators/`](test/application/decorators).
 
 ---
 

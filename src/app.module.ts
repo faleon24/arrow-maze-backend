@@ -1,6 +1,8 @@
 import { Module, Logger } from '@nestjs/common';
 import { GetUserByIdUseCase } from './application/usecases/auth/get-user-by-id.usecase';
 import { LoggingUseCaseDecorator } from './application/decorators/logging-use-case.decorator';
+import { CachingUseCaseDecorator } from './application/decorators/caching-use-case.decorator';
+import { AuthCheckUseCaseDecorator } from './application/decorators/auth-check-use-case.decorator';
 import { UseCase } from './application/usecases/use-case';
 import { BoardSolver } from './domain/services/board-solver';
 
@@ -61,6 +63,7 @@ import { BcryptPasswordHasher } from './infrastructure/security/bcrypt-password-
 import { JwtTokenService } from './infrastructure/security/jwt-token-service';
 import { SystemClock } from './infrastructure/system/system-clock';
 import { UuidGenerator } from './infrastructure/system/uuid-generator';
+import { PresenceAuthChecker } from './infrastructure/security/presence-auth-checker';
 import { PostgresLeaderboardRepository } from './infrastructure/persistence/postgres-leaderboard.repository';
 import { PostgresShopRepository } from './infrastructure/persistence/postgres-shop.repository';
 import { PostgresWalletRepository } from './infrastructure/persistence/postgres-wallet.repository';
@@ -121,6 +124,32 @@ function parseExpiresIn(value: string): number {
  */
 function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
   return new LoggingUseCaseDecorator(uc, name, new Logger('UseCase'));
+}
+
+/**
+ * withAuth — wraps a use case in the AuthCheckUseCaseDecorator, using
+ * the default presence-based IAuthChecker. The subject extractor tells
+ * the aspect where the authenticated id lives in each command. Same OCP
+ * benefit as withLogging: the auth policy is chosen in one place.
+ */
+function withAuth<C, R>(
+  uc: UseCase<C, R>,
+  extractSubject: (command: C) => string | undefined | null,
+): UseCase<C, R> {
+  return new AuthCheckUseCaseDecorator(
+    uc,
+    extractSubject,
+    new PresenceAuthChecker(),
+  );
+}
+
+/**
+ * withCache — wraps a use case in the CachingUseCaseDecorator with a
+ * time-to-live in milliseconds. Only applied to read-only use cases over
+ * slowly-changing data (the shop catalog) at the composition root.
+ */
+function withCache<C, R>(uc: UseCase<C, R>, ttlMs: number): UseCase<C, R> {
+  return new CachingUseCaseDecorator(uc, ttlMs);
 }
 @Module({
 
@@ -185,7 +214,10 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
     {
       provide: GetProgressUseCase,
       useFactory: (progress: IProgressRepository) =>
-        withLogging(new GetProgressUseCase(progress), 'GetProgressUseCase'),
+        withLogging(
+          withAuth(new GetProgressUseCase(progress), (c) => c.userId),
+          'GetProgressUseCase',
+        ),
       inject: [PROGRESS_REPOSITORY],
     },
     {
@@ -203,7 +235,10 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
     {
       provide: GetUserByIdUseCase,
       useFactory: (users: IUserRepository) =>
-        withLogging(new GetUserByIdUseCase(users), 'GetUserByIdUseCase'),
+        withLogging(
+          withCache(new GetUserByIdUseCase(users), 30_000),
+          'GetUserByIdUseCase',
+        ),
       inject: [USER_REPOSITORY],
     },
 
@@ -286,7 +321,10 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
 {
   provide: GetWalletUseCase,
   useFactory: (wallets: IWalletRepository) =>
-    withLogging(new GetWalletUseCase(wallets), 'GetWalletUseCase'),
+    withLogging(
+      withAuth(new GetWalletUseCase(wallets), (userId) => userId),
+      'GetWalletUseCase',
+    ),
   inject: [WALLET_REPOSITORY],
 },
 {
