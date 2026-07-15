@@ -12,6 +12,7 @@ import { DomainError } from '../../domain/errors';
 import { EmailAlreadyRegisteredError } from '../../domain/errors/email-already-registered.error';
 import { InvalidCredentialsError } from '../../domain/errors/invalid-credentials.error';
 import { InvalidTokenError } from '../../domain/errors/invalid-token.error';
+import { UnauthorizedError } from '../../domain/errors/unauthorized.error';
 import { LevelNotFoundError } from '../../domain/errors/level-not-found.error';
 
 /**
@@ -68,6 +69,7 @@ private static readonly STATUS_BY_ERROR = new Map<Function, number>([
     [EmailAlreadyRegisteredError, HttpStatus.CONFLICT], // 409
     [InvalidCredentialsError, HttpStatus.UNAUTHORIZED], // 401
     [InvalidTokenError, HttpStatus.UNAUTHORIZED], // 401
+    [UnauthorizedError, HttpStatus.UNAUTHORIZED], // 401
     [LevelNotFoundError, HttpStatus.NOT_FOUND], // 404
   ]);
 
