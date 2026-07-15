@@ -224,7 +224,10 @@ function withLogging<C, R>(uc: UseCase<C, R>, name: string): UseCase<C, R> {
     ) => {
       const rng = new DefaultRandomSource();
       const generator = new RandomBoardGenerator(solver, rng);
-      return new GenerateLevelUseCase(levels, generator, ids);
+      return withLogging(
+        new GenerateLevelUseCase(levels, generator, ids),
+        'GenerateLevelUseCase',
+      );
     },
     inject: [LEVEL_REPOSITORY, ID_GENERATOR, BoardSolver],
   },
