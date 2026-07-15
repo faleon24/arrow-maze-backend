@@ -33,32 +33,24 @@ interface DifficultyParams {
   maxActivatableRatio: number;
   minCollectibles: number;
   maxCollectibles: number;
-  /**
-   * Chance (0..1) that growPath rejects continuing in the same
-   * direction and picks a turn instead. Higher = more L/U/S/snake
-   * shapes, matching the reference game's visual density.
-   */
   turnBias: number;
 }
 
 /**
- * RandomBoardGenerator v4 — denser, snakier boards that match the
- * reference SayGames Arrow Maze more closely.
+ * RandomBoardGenerator v5 — same density as v4 (multi-cell snakes)
+ * with reachable-only STAR placement.
  *
- * Changes vs v3:
- *   - Longer max arrow length (HARD up to 7 cells).
- *   - More arrows per board (HARD 10-14 vs 8-12).
- *   - Bigger HARD grids (7-9 vs 6-8).
- *   - Turn bias in growPath — biases the random walk toward changing
- *     direction, producing L/U/S/snake shapes rather than mostly
- *     straight paths.
- *   - MAX_BOARD_ATTEMPTS raised to 200 to accommodate the stricter
- *     packing constraints.
+ * v4 dropped STAR collectibles on any free cell, which sometimes
+ * landed them where no arrow's ray ever passed — visually present,
+ * mechanically unreachable. v5 first simulates the greedy solve to
+ * compute the union of ray cells that fire during a valid clear, then
+ * places STARs only on those cells. Reachable ⊂ free cells, so a
+ * board with tightly-packed arrows may have fewer STARs than the
+ * difficulty's target — acceptable, better than unreachable ones.
  */
 export class RandomBoardGenerator {
   private static readonly MAX_BOARD_ATTEMPTS = 200;
   private static readonly MAX_ARROW_ATTEMPTS = 50;
-  private static readonly MAX_COLLECTIBLE_ATTEMPTS = 30;
   private static readonly PARAMS: Record<string, DifficultyParams> = {
     EASY: {
       minRows: 4,
@@ -156,6 +148,7 @@ export class RandomBoardGenerator {
     const collectibles = this.placeCollectibles(
       rows,
       cols,
+      arrows,
       occupied,
       params,
     );
@@ -167,9 +160,17 @@ export class RandomBoardGenerator {
     }
   }
 
+  /**
+   * Place STARs only on cells reachable by some arrow's ray during a
+   * valid greedy solve. Reachable set is intersected with free-cell
+   * set (a STAR can't sit on an arrow segment or a wall). If the
+   * reachable pool is smaller than the difficulty's target, we ship
+   * fewer STARs — better than placing unreachable ones.
+   */
   private placeCollectibles(
     rows: number,
     cols: number,
+    arrows: ArrowPathInfo[],
     occupied: Set<string>,
     params: DifficultyParams,
   ): CollectibleInfo[] {
@@ -179,21 +180,89 @@ export class RandomBoardGenerator {
     );
     if (target === 0) return [];
 
+    const reachable = this.computeReachableCells(
+      rows,
+      cols,
+      arrows,
+      new Set<string>(),
+    );
+    const pool = Array.from(reachable).filter((c) => !occupied.has(c));
+
     const collectibles: CollectibleInfo[] = [];
-    let attempts = 0;
-    while (
-      collectibles.length < target &&
-      attempts < RandomBoardGenerator.MAX_COLLECTIBLE_ATTEMPTS
-    ) {
-      attempts++;
-      const r = this.rng.nextInt(rows);
-      const c = this.rng.nextInt(cols);
-      const cell = `${r},${c}`;
-      if (occupied.has(cell)) continue;
+    while (collectibles.length < target && pool.length > 0) {
+      const idx = this.rng.nextInt(pool.length);
+      const cell = pool.splice(idx, 1)[0];
       occupied.add(cell);
       collectibles.push(new CollectibleInfo(cell, 'STAR'));
     }
     return collectibles;
+  }
+
+  /**
+   * Simulate the greedy solve and return every cell that some arrow's
+   * ray passes through as it fires. Excludes arrow segments (they sit
+   * on the cell) but includes all clear cells the rays traverse.
+   */
+  private computeReachableCells(
+    rows: number,
+    cols: number,
+    arrows: ArrowPathInfo[],
+    walls: Set<string>,
+  ): Set<string> {
+    const arrowsById = new Map<string, ArrowPathInfo>(
+      arrows.map((a) => [a.id, a]),
+    );
+    const remaining = new Set<string>(arrowsById.keys());
+    const reachable = new Set<string>();
+
+    let progressed = true;
+    while (progressed && remaining.size > 0) {
+      progressed = false;
+      for (const id of remaining) {
+        const arrow = arrowsById.get(id)!;
+        const others = new Set<string>();
+        for (const oid of remaining) {
+          if (oid === id) continue;
+          for (const c of arrowsById.get(oid)!.cells) others.add(c);
+        }
+        const rayCells = this.traceUnblockedRay(
+          arrow,
+          rows,
+          cols,
+          walls,
+          others,
+        );
+        if (rayCells !== null) {
+          for (const c of rayCells) reachable.add(c);
+          remaining.delete(id);
+          progressed = true;
+          break;
+        }
+      }
+    }
+    return reachable;
+  }
+
+  private traceUnblockedRay(
+    arrow: ArrowPathInfo,
+    rows: number,
+    cols: number,
+    walls: Set<string>,
+    otherCells: Set<string>,
+  ): string[] | null {
+    const cells: string[] = [];
+    const [hr, hc] = arrow.head.split(',').map((s) => parseInt(s, 10));
+    const delta = DIRECTION_DELTAS[arrow.direction];
+    let r = hr + delta.dr;
+    let c = hc + delta.dc;
+    while (r >= 0 && r < rows && c >= 0 && c < cols) {
+      const cell = `${r},${c}`;
+      if (walls.has(cell) || otherCells.has(cell)) return null;
+      cells.push(cell);
+      r += delta.dr;
+      c += delta.dc;
+    }
+    return cells;
   }
 
   private tryPlaceArrow(
@@ -240,15 +309,6 @@ export class RandomBoardGenerator {
     return null;
   }
 
-  /**
-   * Grow a Manhattan-1 non-crossing path via biased random walk.
-   *
-   * With probability `turnBias`, if we can turn (a non-forward
-   * candidate exists), we drop the forward candidate from the choice
-   * set — this produces the L/U/S/snake shapes that make dense boards
-   * read visually. Falls back to uniform random when only the forward
-   * candidate is available.
-   */
   private growPath(
     startCell: string,
     targetLen: number,
@@ -280,9 +340,6 @@ export class RandomBoardGenerator {
       }
       if (candidates.length === 0) break;
 
-      // Turn bias: if we have a previous segment AND at least one
-      // non-forward candidate, drop the forward candidate with the
-      // configured probability.
       let pickPool = candidates;
       if (
         lastDelta !== null &&
