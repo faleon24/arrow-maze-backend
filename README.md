@@ -91,6 +91,12 @@ Cross-cutting concerns are applied with the **Decorator** pattern rather than Ne
 
 ---
 
+## Economy — server resource, client offline-first
+
+The wallet, shop, inventory, and atomic purchase form a complete, JWT-protected REST resource (`GET /me/wallet`, `POST /me/purchases`), documented in Swagger and covered by tests. The Flutter client currently runs its coin economy locally (offline-first) so earning and spending never block gameplay; this server resource is the authoritative surface the client is architected to adopt for cross-device sync.
+
+---
+
 ## Getting started
 
 Requires Node 20+, PostgreSQL 16, and npm.
