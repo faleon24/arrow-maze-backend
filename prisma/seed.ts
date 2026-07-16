@@ -12,7 +12,6 @@ import {
 import { BoardSolver } from '../src/domain/services/board-solver';
 import { RandomBoardGenerator } from '../src/domain/services/random-board-generator';
 import { SeededRandomSource } from '../src/domain/services/random-source';
-import { GenerateLevelUseCase } from '../src/application/usecases/levels/generate-level.usecase';
 import { IIdGenerator } from '../src/application/ports/out/id-generator.port';
 
 /**
@@ -166,12 +165,18 @@ function profileFor(
 
 const solver = new BoardSolver();
 
-function buildFigureLevel(spec: FigureSpec, index: number): Level {
+/**
+ * Build (and solver-verify) the board for a figure. `seedIndex` is the
+ * figure's fixed position in the `figures` list — it drives the peel
+ * axis and RNG, so a figure's arrow directions stay stable regardless
+ * of where the level lands in the final (difficulty-grouped) catalog.
+ */
+function buildFigureBoard(spec: FigureSpec, seedIndex: number): BoardLayout {
   const rows = spec.pattern.length;
   const cols = Math.max(...spec.pattern.map((l) => l.length));
   const cells = patternToCells(spec.pattern);
-  const rng = makeRng(0x9e37 + index * 2654435761);
-  const axis = (['UP', 'DOWN', 'LEFT', 'RIGHT'] as PeelAxis[])[index % 4];
+  const rng = makeRng(0x9e37 + seedIndex * 2654435761);
+  const axis = (['UP', 'DOWN', 'LEFT', 'RIGHT'] as PeelAxis[])[seedIndex % 4];
   const dirs = assignDirections(cells, rows, cols, axis, rng);
 
   const arrows = cells.map((cell, i) => {
@@ -190,14 +195,7 @@ function buildFigureLevel(spec: FigureSpec, index: number): Level {
       `Figure "${spec.name}" is not solvable — check its pattern/axis`,
     );
   }
-  return new Level({
-    id: spec.uuid,
-    index,
-    difficulty: profileFor(spec.difficulty),
-    board,
-    parTimeMs: arrows.length * 15_000,
-    published: true,
-  });
+  return board;
 }
 
 // The 15 figures. First three reuse the canonical UUIDs so any progress
@@ -355,52 +353,85 @@ const shopItems = [
   },
 ];
 
+interface SeedItem {
+  difficulty: Difficulty;
+  id: string;
+  board: BoardLayout;
+  label: string;
+}
+
 async function main(): Promise<void> {
   const prisma = new PrismaService();
   await prisma.$connect();
   const repository = new PostgresLevelRepository(prisma);
 
-  // --- 1. Hand-crafted FIGURE levels (indices 0-14) ---
-  for (let i = 0; i < figures.length; i++) {
-    const level = buildFigureLevel(figures[i], i);
-    await repository.save(level);
-    console.log(
-      `Seeded figure "${figures[i].name}" index=${level.index} ` +
-        `difficulty=${level.difficulty.label()} arrows=${level.board.arrows.length} id=${level.id}`,
-    );
-  }
+  // --- 1. Figure boards (built + solver-verified in memory) ---
+  const figureItems: SeedItem[] = figures.map((spec, i) => ({
+    difficulty: spec.difficulty,
+    id: spec.uuid,
+    board: buildFigureBoard(spec, i),
+    label: `figure "${spec.name}"`,
+  }));
 
-  // --- 2. Procedurally generated levels (indices 15-41) ---
-  //
-  // 9 EASY + 9 MEDIUM + 9 HARD = 27 additional puzzles, deterministic via
-  // SeededRandomSource + SeededUuidGenerator so the seed stays idempotent.
+  // --- 2. Procedural boards (in memory), deterministic + idempotent ---
+  // 9 EASY + 9 MEDIUM + 9 HARD from SeededRandomSource; ids from
+  // SeededUuidGenerator so repeated seeds upsert the same rows.
   const generator = new RandomBoardGenerator(
     new BoardSolver(),
     new SeededRandomSource(20_260_713),
   );
   const generatedIdGen = new SeededUuidGenerator();
-  const generateLevel = new GenerateLevelUseCase(
-    repository,
-    generator,
-    generatedIdGen,
-  );
-  const plan: string[] = [
-    ...Array(9).fill('EASY'),
-    ...Array(9).fill('MEDIUM'),
-    ...Array(9).fill('HARD'),
+  const genPlan: Difficulty[] = [
+    ...Array<Difficulty>(9).fill('EASY'),
+    ...Array<Difficulty>(9).fill('MEDIUM'),
+    ...Array<Difficulty>(9).fill('HARD'),
   ];
-  for (const difficulty of plan) {
-    const level = await generateLevel.execute({ difficulty });
+  const generatedItems: SeedItem[] = genPlan.map((difficulty) => ({
+    difficulty,
+    id: generatedIdGen.generate(),
+    board: generator.generate(difficulty),
+    label: 'generated',
+  }));
+
+  // --- 3. Group by difficulty, figures leading each tier ---
+  // Catalog order: EASY (5 figures + 9 generated), then MEDIUM, then HARD.
+  // Dense 0-based indices assigned in this order so the app shows a clean
+  // easy -> medium -> hard progression with the figures up front.
+  const order: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
+  const ordered: SeedItem[] = [];
+  for (const diff of order) {
+    ordered.push(...figureItems.filter((it) => it.difficulty === diff));
+    ordered.push(...generatedItems.filter((it) => it.difficulty === diff));
+  }
+
+  // --- 4. Assign indices and persist in catalog order ---
+  for (let index = 0; index < ordered.length; index++) {
+    const item = ordered[index];
+    const profile = profileFor(item.difficulty);
+    const parTimeMs = Math.floor(
+      item.board.arrows.length * 15_000 * profile.parTimeMultiplier(),
+    );
+    const level = new Level({
+      id: item.id,
+      index,
+      difficulty: profile,
+      board: item.board,
+      parTimeMs,
+      published: true,
+    });
+    await repository.save(level);
     console.log(
-      `Generated level index=${level.index} difficulty=${level.difficulty.label()} arrows=${level.board.arrows.length} id=${level.id}`,
+      `Seeded index=${index} difficulty=${profile.label()} ` +
+        `arrows=${item.board.arrows.length} ${item.label} id=${item.id}`,
     );
   }
   console.log(
-    `Levels done. ${figures.length + plan.length} total ` +
-      `(${figures.length} hand-crafted figures + ${plan.length} generated).`,
+    `Levels done. ${ordered.length} total ` +
+      `(${figureItems.length} figures + ${generatedItems.length} generated), ` +
+      `grouped by difficulty.`,
   );
 
-  // --- 3. Shop items (upsert-by-id, unchanged) ---
+  // --- 5. Shop items (upsert-by-id, unchanged) ---
   for (const item of shopItems) {
     await prisma.shopItem.upsert({
       where: { id: item.id },
