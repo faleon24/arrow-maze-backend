@@ -991,7 +991,7 @@ Backend final state after this round: 358 unit tests / 51 e2e tests all green, 3
 
 ---
 
-## Entry 27 — Generator v2 (multi-cell + difficulty ratio) and attempts-aware scoring
+## Entry 28 — Generator v2 (multi-cell + difficulty ratio) and attempts-aware scoring
 
 **Date**: 2026-07-13
 **Tool**: Claude Opus 4.7 (via Cowork desktop app)
@@ -1028,7 +1028,7 @@ Backend final state after this round: 358 unit tests / 51 e2e tests all green, 3
 
 ---
 
-## Entry 28 — Backend hardening: unified DI tokens + atomic purchase transaction
+## Entry 29 — Backend hardening: unified DI tokens + atomic purchase transaction
 
 **Date**: 2026-07-13
 **Tool**: Claude Opus 4.7 (via Cowork desktop app)
@@ -1050,7 +1050,7 @@ Backend final state after this round: 358 unit tests / 51 e2e tests all green, 3
 
 ---
 
-## Entry 29 — Backend: STAR collectibles seeded by the random generator
+## Entry 30 — Backend: STAR collectibles seeded by the random generator
 
 **Date**: 2026-07-14
 **Tool**: Claude Opus 4.7 (via Cowork desktop app)
@@ -1065,3 +1065,23 @@ Backend final state after this round: 358 unit tests / 51 e2e tests all green, 3
 **Modifications made by the developer**: kept `placeCollectibles` after `tryPlaceArrow` so arrows always own their turf first and collectibles fill remaining cells — mirrors the reference game's visual where stars sit in negative space. Difficulty-scaled counts because HARD boards are bigger and can host more stars without visual clutter.
 
 **Lessons learned**: check the domain before adding UI. When `GameSession._clearArrow` was already scanning for `collectibleAt(next)` and populating `collectedPositions`, the missing piece was a placement policy, not a game-mechanic change. One method's 15 lines closed the gap end to end.
+
+---
+
+## Critical evaluation
+
+### AI assistance share
+
+An estimated **~85–90%** of the backend code was produced with AI assistance (Claude Opus, via the Cowork desktop app). The developer acted as architect, reviewer, and integrator: fixing the architecture (hexagonal + DDD), enforcing project conventions (`Symbol` DI tokens, no enums, no interceptors, AAA `should_x_when_y` tests, per-feature use-case folders), running every `npm run build` / `npm test` / `npm run test:e2e` gate, and reworking or rejecting output that missed intent. The remaining ~10–15% is hand-written config, environment setup, and the surgical composition-root patches. This document, the README, and commit messages were AI-drafted and developer-reviewed.
+
+### Where AI produced incorrect or suboptimal output
+
+- **Generator v1 was trivially easy.** The first random generator (Entry 26) placed single-cell arrows pointing outward, so HARD levels were solvable in any order. The solver and arrow-count checks passed — only human playtest caught it. Fixed in v2 with a difficulty-ratio gate (Entry 27).
+- **"Always 3 stars" scoring bug.** The initial time-only formula gave 3 stars to any fast run regardless of wasted taps. Caught by playtest, not by a spec; fixed with `stars = min(movesBased, timeBased)`.
+- **Two-write purchase race.** Wallet and inventory were written separately, leaving a partial-write window on failure. Fixed with an atomic `IPurchaseStore` transaction (Entry 28).
+- **Caching aspect first mis-targeted.** Wiring the `CachingUseCaseDecorator` onto the shop catalog broke a legitimate read-after-write e2e (insert items → assert list). The e2e gate caught it before commit and the aspect was re-targeted to the read-only `GetUserById` lookup, where no runtime write path exists.
+- **Tooling friction, not logic.** Recurring non-logic failures: zsh splitting multi-line pastes and `cp` commands, and BSD `sed` silently no-op-ing multi-line edits. Mitigated by a scratchpad + `cp` workflow and Python `re.subn` patches that assert on match count and fail loudly when the file layout drifts.
+
+### Reflection on productivity and quality
+
+AI compressed what is normally a semester of backend work into days: 42 test suites / 354 unit + 51 e2e green, hexagonal separation held throughout, and every subsystem stayed inside its layer. The decisive quality lever was not the model but the process around it — per-commit test gates, a seeded RNG for deterministic generator tests, and asserting patches — which turned "plausible but wrong" output into loud, catchable failures. The recurring lesson: AI is excellent at producing correct-*shaped* code quickly, but correctness against *intent* (felt difficulty, grading semantics, cache consistency, transactional integrity) still requires a human running the system and reading the result. Treated as a fast pair-programmer behind a strict test harness, it raised both throughput and — through the forced test discipline — quality. Treated as an oracle, it would have shipped the trivial generator, the 3-star bug, and a stale-cache regression.
