@@ -17,17 +17,12 @@ import { IIdGenerator } from '../src/application/ports/out/id-generator.port';
 
 /**
  * SeededUuidGenerator — deterministic v4-format UUID sequence for the
- * seed script. Same run number always produces the same UUID, so
- * repeated `npx prisma db seed` calls upsert the same rows instead of
- * accumulating duplicates. Prefix `abcdef00-...` guarantees zero
- * collision with the hand-crafted UUIDs (11111.../22222.../33333...).
- *
- * NOT for production use — a real UUID generator (crypto-random) lives
- * behind the IIdGenerator port in the running application.
+ * generated (non-figure) levels. Same run number always produces the
+ * same UUID, so repeated `npx prisma db seed` calls upsert the same
+ * rows instead of accumulating duplicates.
  */
 class SeededUuidGenerator implements IIdGenerator {
   private counter = 0;
-
   generate(): string {
     this.counter += 1;
     const hex = this.counter.toString(16).padStart(12, '0');
@@ -35,78 +30,305 @@ class SeededUuidGenerator implements IIdGenerator {
   }
 }
 
-function buildLevelOne(): Level {
-  const board = new BoardLayout({
-    rows: 2,
-    cols: 2,
-    arrows: [
-      new ArrowPathInfo('a1', 'PINK', ['0,0'], 'UP'),
-      new ArrowPathInfo('a2', 'GREEN', ['0,1'], 'RIGHT'),
-      new ArrowPathInfo('a3', 'BLUE', ['1,0'], 'LEFT'),
-      new ArrowPathInfo('a4', 'YELLOW', ['1,1'], 'DOWN'),
-    ],
-  });
-  return new Level({
-    id: '11111111-1111-4111-8111-111111111111',
-    index: 0,
-    difficulty: new EasyProfile(),
-    board,
-    parTimeMs: 120_000,
-    published: true,
-  });
+// ===========================================================================
+// Hand-crafted FIGURE levels
+// ===========================================================================
+//
+// Fifteen manually-designed levels whose arrows are laid out to draw a
+// recognizable figure — a symbol or a letter — instead of a random
+// scatter. Each '#' in a pattern becomes a single-cell arrow; '.' is
+// empty space. EASY draws simple symbols, MEDIUM spells "ARROW", HARD
+// spells "MAZE" plus a star. The shape is the point: the professor sees
+// intent, not noise, and can read the game's name off the catalog.
+//
+// Directions are NOT hand-placed. They are derived by peeling the figure
+// from one edge: cells are ordered from that edge inward, and each is
+// given a direction whose ray to the border never crosses a cell removed
+// later. That makes the board solvable BY CONSTRUCTION (a valid clearing
+// order exists — the peel order), while still choosing randomly among the
+// valid directions per cell so the arrows look varied rather than all
+// pointing the same way. BoardSolver.isSolvable double-checks every board
+// before it ships.
+
+type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
+type PeelAxis = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
+
+interface FigureSpec {
+  name: string;
+  difficulty: Difficulty;
+  uuid: string;
+  pattern: string[];
 }
 
-function buildLevelTwo(): Level {
-  const board = new BoardLayout({
-    rows: 3,
-    cols: 3,
-    arrows: [
-      new ArrowPathInfo('a1', 'PINK', ['0,0'], 'RIGHT'),
-      new ArrowPathInfo('a2', 'GREEN', ['0,1'], 'RIGHT'),
-      new ArrowPathInfo('a3', 'BLUE', ['1,2'], 'DOWN'),
-      new ArrowPathInfo('a4', 'YELLOW', ['2,2'], 'DOWN'),
-      new ArrowPathInfo('a5', 'PURPLE', ['2,0'], 'LEFT'),
-    ],
+const COLORS = ['PINK', 'GREEN', 'BLUE', 'YELLOW', 'PURPLE'];
+
+/** Small deterministic RNG (LCG) so figure direction choices are stable. */
+function makeRng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/** Parse a '#'/'.' pattern into occupied "row,col" cell keys. */
+function patternToCells(pattern: string[]): Array<{ r: number; c: number }> {
+  const cells: Array<{ r: number; c: number }> = [];
+  pattern.forEach((line, r) => {
+    for (let c = 0; c < line.length; c++) {
+      if (line[c] === '#') cells.push({ r, c });
+    }
   });
-  return new Level({
-    id: '22222222-2222-4222-8222-222222222222',
-    index: 1,
-    difficulty: new MediumProfile(),
-    board,
-    parTimeMs: 100_000,
-    published: true,
-  });
+  return cells;
+}
+
+const DELTA: Record<PeelAxis, { dr: number; dc: number }> = {
+  UP: { dr: -1, dc: 0 },
+  DOWN: { dr: 1, dc: 0 },
+  LEFT: { dr: 0, dc: -1 },
+  RIGHT: { dr: 0, dc: 1 },
+};
+
+/** Is the ray from (r,c) toward `dir` clear of every cell in `present`? */
+function rayClear(
+  r: number,
+  c: number,
+  dir: PeelAxis,
+  rows: number,
+  cols: number,
+  present: Set<string>,
+): boolean {
+  const { dr, dc } = DELTA[dir];
+  let rr = r + dr;
+  let cc = c + dc;
+  while (rr >= 0 && rr < rows && cc >= 0 && cc < cols) {
+    if (present.has(`${rr},${cc}`)) return false;
+    rr += dr;
+    cc += dc;
+  }
+  return true;
 }
 
 /**
- * Level 3 (HARD) — a 4x4 board with multiple blocking chains. A valid
- * clearing sequence exists (release edge-facing arrows first to open
- * lanes, then the inner ones), but no single obvious first move solves
- * it.
+ * Assign every cell a direction so the figure is solvable. Peels from
+ * `axis`: cells are removed in that order, and each cell picks a random
+ * direction whose ray is clear of the not-yet-removed cells. The axis
+ * direction itself is always valid for the current frontier cell, so a
+ * choice always exists.
  */
-function buildLevelThree(): Level {
-  const board = new BoardLayout({
-    rows: 4,
-    cols: 4,
-    arrows: [
-      new ArrowPathInfo('a1', 'PINK', ['0,1'], 'UP'),
-      new ArrowPathInfo('a2', 'GREEN', ['0,3'], 'LEFT'),
-      new ArrowPathInfo('a3', 'BLUE', ['1,0'], 'RIGHT'),
-      new ArrowPathInfo('a4', 'YELLOW', ['1,2'], 'UP'),
-      new ArrowPathInfo('a5', 'PURPLE', ['2,1'], 'DOWN'),
-      new ArrowPathInfo('a6', 'PINK', ['2,3'], 'DOWN'),
-      new ArrowPathInfo('a7', 'GREEN', ['3,2'], 'LEFT'),
-    ],
+function assignDirections(
+  cells: Array<{ r: number; c: number }>,
+  rows: number,
+  cols: number,
+  axis: PeelAxis,
+  rng: () => number,
+): Map<string, PeelAxis> {
+  const order = [...cells].sort((a, b) => {
+    switch (axis) {
+      case 'UP':
+        return a.r - b.r || a.c - b.c;
+      case 'DOWN':
+        return b.r - a.r || a.c - b.c;
+      case 'LEFT':
+        return a.c - b.c || a.r - b.r;
+      case 'RIGHT':
+        return b.c - a.c || a.r - b.r;
+    }
   });
+  const present = new Set(cells.map((c) => `${c.r},${c.c}`));
+  const dirs = new Map<string, PeelAxis>();
+  for (const cell of order) {
+    const key = `${cell.r},${cell.c}`;
+    present.delete(key);
+    const candidates = (['UP', 'DOWN', 'LEFT', 'RIGHT'] as PeelAxis[]).filter(
+      (d) => rayClear(cell.r, cell.c, d, rows, cols, present),
+    );
+    // `axis` is guaranteed clear for the frontier cell, so candidates is
+    // never empty; pick one at random for visual variety.
+    const pick = candidates[Math.floor(rng() * candidates.length)];
+    dirs.set(key, pick);
+  }
+  return dirs;
+}
+
+function profileFor(
+  difficulty: Difficulty,
+): EasyProfile | MediumProfile | HardProfile {
+  switch (difficulty) {
+    case 'EASY':
+      return new EasyProfile();
+    case 'MEDIUM':
+      return new MediumProfile();
+    case 'HARD':
+      return new HardProfile();
+  }
+}
+
+const solver = new BoardSolver();
+
+function buildFigureLevel(spec: FigureSpec, index: number): Level {
+  const rows = spec.pattern.length;
+  const cols = Math.max(...spec.pattern.map((l) => l.length));
+  const cells = patternToCells(spec.pattern);
+  const rng = makeRng(0x9e37 + index * 2654435761);
+  const axis = (['UP', 'DOWN', 'LEFT', 'RIGHT'] as PeelAxis[])[index % 4];
+  const dirs = assignDirections(cells, rows, cols, axis, rng);
+
+  const arrows = cells.map((cell, i) => {
+    const key = `${cell.r},${cell.c}`;
+    return new ArrowPathInfo(
+      `a${i}`,
+      COLORS[i % COLORS.length],
+      [key],
+      dirs.get(key)!,
+    );
+  });
+
+  const board = new BoardLayout({ rows, cols, arrows });
+  if (!solver.isSolvable(board)) {
+    throw new Error(
+      `Figure "${spec.name}" is not solvable — check its pattern/axis`,
+    );
+  }
   return new Level({
-    id: '33333333-3333-4333-8333-333333333333',
-    index: 2,
-    difficulty: new HardProfile(),
+    id: spec.uuid,
+    index,
+    difficulty: profileFor(spec.difficulty),
     board,
-    parTimeMs: 90_000,
+    parTimeMs: arrows.length * 15_000,
     published: true,
   });
 }
+
+// The 15 figures. First three reuse the canonical UUIDs so any progress
+// keyed to them (and the app's bundled dev fixture) stays aligned.
+const figures: FigureSpec[] = [
+  // ---------- EASY: symbols ----------
+  {
+    name: 'Plus',
+    difficulty: 'EASY',
+    uuid: '11111111-1111-4111-8111-111111111111',
+    pattern: ['..#..', '..#..', '#####', '..#..', '..#..'],
+  },
+  {
+    name: 'Square',
+    difficulty: 'EASY',
+    uuid: '22222222-2222-4222-8222-222222222222',
+    pattern: ['#####', '#...#', '#...#', '#...#', '#####'],
+  },
+  {
+    name: 'Diamond',
+    difficulty: 'EASY',
+    uuid: '33333333-3333-4333-8333-333333333333',
+    pattern: ['..#..', '.#.#.', '#...#', '.#.#.', '..#..'],
+  },
+  {
+    name: 'Triangle',
+    difficulty: 'EASY',
+    uuid: 'f16a0000-0000-4000-8000-000000000003',
+    pattern: ['..#..', '..#..', '.#.#.', '.#.#.', '#####'],
+  },
+  {
+    name: 'Letter T',
+    difficulty: 'EASY',
+    uuid: 'f16a0000-0000-4000-8000-000000000004',
+    pattern: ['#####', '..#..', '..#..', '..#..', '..#..'],
+  },
+  // ---------- MEDIUM: spells "ARROW" ----------
+  {
+    name: 'Letter A',
+    difficulty: 'MEDIUM',
+    uuid: 'f16a0000-0000-4000-8000-000000000005',
+    pattern: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  },
+  {
+    name: 'Letter R',
+    difficulty: 'MEDIUM',
+    uuid: 'f16a0000-0000-4000-8000-000000000006',
+    pattern: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+  },
+  {
+    name: 'Letter R (2)',
+    difficulty: 'MEDIUM',
+    uuid: 'f16a0000-0000-4000-8000-000000000007',
+    pattern: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+  },
+  {
+    name: 'Letter O',
+    difficulty: 'MEDIUM',
+    uuid: 'f16a0000-0000-4000-8000-000000000008',
+    pattern: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  },
+  {
+    name: 'Letter W',
+    difficulty: 'MEDIUM',
+    uuid: 'f16a0000-0000-4000-8000-000000000009',
+    pattern: [
+      '#.....#',
+      '#.....#',
+      '#.....#',
+      '#..#..#',
+      '#.#.#.#',
+      '##...##',
+      '.#...#.',
+    ],
+  },
+  // ---------- HARD: spells "MAZE" + a star ----------
+  {
+    name: 'Letter M',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-00000000000a',
+    pattern: [
+      '#.....#',
+      '##...##',
+      '#.#.#.#',
+      '#..#..#',
+      '#.....#',
+      '#.....#',
+      '#.....#',
+    ],
+  },
+  {
+    name: 'Letter A (hard)',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-00000000000b',
+    pattern: [
+      '..###..',
+      '.#...#.',
+      '#.....#',
+      '#.....#',
+      '#######',
+      '#.....#',
+      '#.....#',
+    ],
+  },
+  {
+    name: 'Letter Z',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-00000000000c',
+    pattern: ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+  },
+  {
+    name: 'Letter E',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-00000000000d',
+    pattern: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  },
+  {
+    name: 'Star',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-00000000000e',
+    pattern: [
+      '...#...',
+      '.#.#.#.',
+      '..###..',
+      '#######',
+      '..###..',
+      '.#.#.#.',
+      '...#...',
+    ],
+  },
+];
 
 /**
  * Initial shop catalog. Canonical UUIDv4 ids so purchase DTOs that
@@ -136,26 +358,22 @@ const shopItems = [
 async function main(): Promise<void> {
   const prisma = new PrismaService();
   await prisma.$connect();
-
   const repository = new PostgresLevelRepository(prisma);
 
-  // --- 1. Hand-crafted levels (indices 0-2, canonical UUIDs) ---
-  const handCrafted = [buildLevelOne(), buildLevelTwo(), buildLevelThree()];
-  for (const level of handCrafted) {
+  // --- 1. Hand-crafted FIGURE levels (indices 0-14) ---
+  for (let i = 0; i < figures.length; i++) {
+    const level = buildFigureLevel(figures[i], i);
     await repository.save(level);
     console.log(
-      `Seeded hand-crafted level index=${level.index} difficulty=${level.difficulty.label()} id=${level.id}`,
+      `Seeded figure "${figures[i].name}" index=${level.index} ` +
+        `difficulty=${level.difficulty.label()} arrows=${level.board.arrows.length} id=${level.id}`,
     );
   }
 
-  // --- 2. Procedurally generated levels (indices 3-29) ---
+  // --- 2. Procedurally generated levels (indices 15-41) ---
   //
-  // 9 EASY + 9 MEDIUM + 9 HARD = 27 additional puzzles. Board layouts
-  // come from SeededRandomSource(20260713) so every run of this script
-  // produces the identical batch; UUIDs come from SeededUuidGenerator
-  // so the repository upserts the same 27 rows instead of accumulating
-  // duplicates. The whole seed is therefore idempotent under repeated
-  // `npx prisma db seed` calls.
+  // 9 EASY + 9 MEDIUM + 9 HARD = 27 additional puzzles, deterministic via
+  // SeededRandomSource + SeededUuidGenerator so the seed stays idempotent.
   const generator = new RandomBoardGenerator(
     new BoardSolver(),
     new SeededRandomSource(20_260_713),
@@ -166,22 +384,20 @@ async function main(): Promise<void> {
     generator,
     generatedIdGen,
   );
-
   const plan: string[] = [
     ...Array(9).fill('EASY'),
     ...Array(9).fill('MEDIUM'),
     ...Array(9).fill('HARD'),
   ];
-
   for (const difficulty of plan) {
     const level = await generateLevel.execute({ difficulty });
     console.log(
       `Generated level index=${level.index} difficulty=${level.difficulty.label()} arrows=${level.board.arrows.length} id=${level.id}`,
     );
   }
-
   console.log(
-    `Levels done. ${handCrafted.length + plan.length} total (${handCrafted.length} hand-crafted + ${plan.length} generated).`,
+    `Levels done. ${figures.length + plan.length} total ` +
+      `(${figures.length} hand-crafted figures + ${plan.length} generated).`,
   );
 
   // --- 3. Shop items (upsert-by-id, unchanged) ---
