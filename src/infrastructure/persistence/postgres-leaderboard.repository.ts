@@ -34,7 +34,6 @@ export class PostgresLeaderboardRepository implements ILeaderboardRepository {
       take: limit,
       include: { user: { select: { displayName: true } } },
     });
-
     return rows.map(
       (row) =>
         new LeaderboardEntry({
@@ -44,5 +43,47 @@ export class PostgresLeaderboardRepository implements ILeaderboardRepository {
           completedAt: row.completedAt,
         }),
     );
+  }
+
+  async findUserRank(
+    levelId: string,
+    userId: string,
+  ): Promise<{ rank: number; entry: LeaderboardEntry } | null> {
+    // The user's own best run on this level (unique per (user, level)).
+    const mine = await this.prisma.progressEntry.findUnique({
+      where: { userId_levelId: { userId, levelId } },
+      include: { user: { select: { displayName: true } } },
+    });
+    if (mine === null) return null;
+
+    // Rank = (number of runs that strictly outrank mine) + 1, expressed
+    // as the same lexicographic order the leaderboard sorts by:
+    //   better stars, OR equal stars & faster, OR equal stars & equal
+    //   time & earlier completion. Counting in SQL keeps this O(index)
+    //   instead of loading the whole board into JS just to find a spot.
+    const better = await this.prisma.progressEntry.count({
+      where: {
+        levelId,
+        OR: [
+          { stars: { gt: mine.stars } },
+          { stars: mine.stars, timeMs: { lt: mine.timeMs } },
+          {
+            stars: mine.stars,
+            timeMs: mine.timeMs,
+            completedAt: { lt: mine.completedAt },
+          },
+        ],
+      },
+    });
+
+    return {
+      rank: better + 1,
+      entry: new LeaderboardEntry({
+        userDisplayName: mine.user.displayName,
+        stars: mine.stars,
+        timeMs: mine.timeMs,
+        completedAt: mine.completedAt,
+      }),
+    };
   }
 }

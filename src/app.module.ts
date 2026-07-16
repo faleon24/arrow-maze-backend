@@ -33,6 +33,7 @@ import { ListLevelsUseCase } from './application/usecases/levels/list-levels.use
 import { SubmitScoreUseCase } from './application/usecases/progress/submit-score.usecase';
 import { GetProgressUseCase } from './application/usecases/progress/get-progress.usecase';
 import { GetLeaderboardUseCase } from './application/usecases/leaderboard/get-leaderboard.usecase';
+import { GetMyRankUseCase } from './application/usecases/leaderboard/get-my-rank.usecase';
 import { UpsertLevelUseCase } from './application/usecases/levels/upsert-level.usecase';
 import { GenerateLevelUseCase } from './application/usecases/levels/generate-level.usecase';
 import { DefaultRandomSource } from './domain/services/random-source';
@@ -226,6 +227,12 @@ function withCache<C, R>(uc: UseCase<C, R>, ttlMs: number): UseCase<C, R> {
        withLogging(new GetLeaderboardUseCase(leaderboard), 'GetLeaderboardUseCase'),
      inject: [LEADERBOARD_REPOSITORY],
    },
+    {
+      provide: GetMyRankUseCase,
+      useFactory: (leaderboard: ILeaderboardRepository) =>
+        withLogging(new GetMyRankUseCase(leaderboard), 'GetMyRankUseCase'),
+      inject: [LEADERBOARD_REPOSITORY],
+    },
     {
       provide: ListLevelsUseCase,
       useFactory: (levels: ILevelRepository) =>
