@@ -1,0 +1,66 @@
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram name="Clean Layers - Backend" id="backend-clean-layers">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="826" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Arrow Maze — Backend (NestJS) · Clean Architecture — Diagrama de Capas" style="text;html=1;align=center;fontStyle=1;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="1080" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="capa4" value="&lt;b&gt;CAPA 4 — Frameworks &amp;amp; Drivers&lt;/b&gt; (detalles volátiles)&lt;br&gt;PrismaService · Postgres{User,Level,Progress,Leaderboard,Shop,Wallet,Inventory}Repository · PrismaPurchaseStore&lt;br&gt;JwtTokenService · BcryptPasswordHasher · SystemClock · UuidGenerator · PresenceAuthChecker&lt;br&gt;&lt;i&gt;libs externas: PostgreSQL 16 · Prisma · bcrypt · jsonwebtoken&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECECEC;strokeColor=#616161;strokeWidth=2;verticalAlign=top;align=center;spacingTop=8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="1080" height="720" as="geometry" />
+        </mxCell>
+
+        <mxCell id="capa3" value="&lt;b&gt;CAPA 3 — Interface Adapters&lt;/b&gt; (adaptan el mundo externo a los puertos)&lt;br&gt;Controllers: Auth · Progress · Levels · Leaderboard · AdminLevels · Shop · MeShop&lt;br&gt;Guards: JwtAuthGuard · AdminKeyGuard · @CurrentUserId · DTOs · Mappers (User/Level/Progress) · DomainExceptionFilter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5CBCB;strokeColor=#C0392B;strokeWidth=2;verticalAlign=top;align=center;spacingTop=8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="95" y="165" width="970" height="600" as="geometry" />
+        </mxCell>
+
+        <mxCell id="capa2" value="&lt;b&gt;CAPA 2 — Application / Use Cases&lt;/b&gt; (sin imports de NestJS)&lt;br&gt;Use cases: RegisterUser · Login · GetUserById · SubmitScore · GetProgress · ListLevels · UpsertLevel · GenerateLevel · GetLeaderboard · GetMyRank · GetWallet · PurchaseItem · ListShopItems&lt;br&gt;AOP «Decorator»: Logging · Caching · AuthCheck&lt;br&gt;&lt;b&gt;Puertos: IUserRepository · ILevelRepository · IProgressRepository · ILeaderboardRepository · IShop/Wallet/InventoryRepository · ITokenService · IClock · IPasswordHasher · IIdGenerator · IAuthChecker · IPurchaseStore&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F6D9EC;strokeColor=#B03A8C;strokeWidth=2;verticalAlign=top;align=center;spacingTop=8;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="150" y="270" width="860" height="420" as="geometry" />
+        </mxCell>
+
+        <mxCell id="capa1" value="&lt;b&gt;CAPA 1 — Dominio / Entidades&lt;/b&gt;&lt;br&gt;User · Email · PasswordHash · Level · BoardLayout · ArrowPathInfo · CollectibleInfo · Score&lt;br&gt;PlayerProgress · LevelProgressEntry · LeaderboardEntry · Wallet · Inventory · ShopItem&lt;br&gt;«Strategy» DifficultyProfile (+Easy/Medium/Hard) · «Factory» DifficultyProfileFactory&lt;br&gt;Servicios de dominio: BoardSolver · RandomBoardGenerator&lt;br&gt;&lt;i&gt;clases puras — cero dependencias externas&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DFF3D8;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=middle;align=center;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="255" y="400" width="650" height="235" as="geometry" />
+        </mxCell>
+
+        <mxCell id="deprule" value="Regla de Dependencia: las dependencias apuntan hacia el centro (Capa 4 → 3 → 2 → 1), nunca al revés." style="text;html=1;align=center;fontStyle=1;fontColor=#C0392B;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="700" width="560" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a1" style="endArrow=block;html=1;strokeColor=#C0392B;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1095" y="470" as="sourcePoint" />
+            <mxPoint x="1065" y="470" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a2" style="endArrow=block;html=1;strokeColor=#C0392B;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1040" y="470" as="sourcePoint" />
+            <mxPoint x="1010" y="470" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a3" style="endArrow=block;html=1;strokeColor=#C0392B;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="985" y="470" as="sourcePoint" />
+            <mxPoint x="905" y="470" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="lg1" value="Capa 1 · Dominio" style="rounded=0;html=1;fillColor=#DFF3D8;strokeColor=#2E7D32;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="60" y="785" width="150" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2" value="Capa 2 · Use Cases + Puertos" style="rounded=0;html=1;fillColor=#F6D9EC;strokeColor=#B03A8C;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="220" y="785" width="220" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3" value="Capa 3 · Interface Adapters" style="rounded=0;html=1;fillColor=#F5CBCB;strokeColor=#C0392B;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="450" y="785" width="200" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="lg4" value="Capa 4 · Frameworks &amp; Drivers" style="rounded=0;html=1;fillColor=#ECECEC;strokeColor=#616161;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="660" y="785" width="220" height="26" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
