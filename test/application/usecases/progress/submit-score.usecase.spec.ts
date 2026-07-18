@@ -61,7 +61,7 @@ function buildLevel(
     board: new BoardLayout({
       rows: 3,
       cols: 3,
-      arrows: [new ArrowPathInfo('a1', 'PINK', ['1,1'], 'UP')],
+      arrows: [new ArrowPathInfo('a1', 'PINK', ['1,1'], 'NE')],
     }),
     parTimeMs: 60_000,
     published: overrides.published ?? true,

@@ -1,6 +1,7 @@
 import { BoardSolver } from '../../../src/domain/services/board-solver';
 import { RandomBoardGenerator } from '../../../src/domain/services/random-board-generator';
 import { SeededRandomSource } from '../../../src/domain/services/random-source';
+import { hexStep, hexDirectionBetween } from '../../../src/domain/models/hex';
 
 describe('RandomBoardGenerator', () => {
   const solver = new BoardSolver();
@@ -118,23 +119,17 @@ describe('RandomBoardGenerator', () => {
       const multi = layout.arrows.filter((a) => a.cells.length >= 2);
 
       // Assert — at least one multi-cell arrow exists in a HARD board
-      // and its direction matches the delta of the last segment.
+      // and its direction matches the hex step of the last segment.
       expect(multi.length).toBeGreaterThan(0);
       for (const arrow of multi) {
         const [pr, pc] = arrow.cells[arrow.cells.length - 2]
           .split(',')
           .map((s) => parseInt(s, 10));
         const [hr, hc] = arrow.head.split(',').map((s) => parseInt(s, 10));
-        const dr = hr - pr;
-        const dc = hc - pc;
-        const expected =
-          dr === -1
-            ? 'UP'
-            : dr === 1
-              ? 'DOWN'
-              : dc === -1
-                ? 'LEFT'
-                : 'RIGHT';
+        const expected = hexDirectionBetween(
+          { row: pr, col: pc },
+          { row: hr, col: hc },
+        );
         expect(arrow.direction).toBe(expected);
       }
     });
@@ -166,12 +161,6 @@ function countActivatable(layout: {
   }[];
   walls: readonly string[];
 }): number {
-  const deltas: Record<string, { dr: number; dc: number }> = {
-    UP: { dr: -1, dc: 0 },
-    DOWN: { dr: 1, dc: 0 },
-    LEFT: { dr: 0, dc: -1 },
-    RIGHT: { dr: 0, dc: 1 },
-  };
   let count = 0;
   for (const arrow of layout.arrows) {
     const others = new Set<string>();
@@ -181,9 +170,7 @@ function countActivatable(layout: {
     }
     const walls = new Set(layout.walls);
     const [hr, hc] = arrow.head.split(',').map((s) => parseInt(s, 10));
-    const delta = deltas[arrow.direction];
-    let r = hr + delta.dr;
-    let c = hc + delta.dc;
+    let { row: r, col: c } = hexStep(arrow.direction, hr, hc);
     let clear = true;
     while (r >= 0 && r < layout.rows && c >= 0 && c < layout.cols) {
       const cell = `${r},${c}`;
@@ -191,8 +178,7 @@ function countActivatable(layout: {
         clear = false;
         break;
       }
-      r += delta.dr;
-      c += delta.dc;
+      ({ row: r, col: c } = hexStep(arrow.direction, r, c));
     }
     if (clear) count++;
   }

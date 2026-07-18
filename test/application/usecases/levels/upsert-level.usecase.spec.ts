@@ -4,7 +4,7 @@ import { ILevelRepository } from '../../../../src/application/ports/out/level-re
 import { UpsertLevelUseCase } from '../../../../src/application/usecases/levels/upsert-level.usecase';
 
 /**
- * Builds a minimal valid command — 1x3 grid, single right-facing arrow
+ * Builds a minimal valid command — 1x3 grid, single east-facing arrow
  * with a clear ray to the edge, EASY difficulty, unpublished. Tests
  * override whatever they need to exercise a specific failure mode.
  */
@@ -30,7 +30,7 @@ const buildCommand = (
     rows: 1,
     cols: 3,
     arrows: overrides.arrows ?? [
-      { id: 'a1', color: 'PINK', cells: ['0,0'], direction: 'RIGHT' },
+      { id: 'a1', color: 'PINK', cells: ['0,0'], direction: 'E' },
     ],
     walls: overrides.walls ?? [],
     collectibles: [],
@@ -70,8 +70,8 @@ describe('UpsertLevelUseCase', () => {
       useCase.execute(
         buildCommand({
           arrows: [
-            { id: 'a1', color: 'PINK', cells: ['0,0'], direction: 'RIGHT' },
-            { id: 'a2', color: 'BLUE', cells: ['0,1'], direction: 'LEFT' },
+            { id: 'a1', color: 'PINK', cells: ['0,0'], direction: 'E' },
+            { id: 'a2', color: 'BLUE', cells: ['0,1'], direction: 'W' },
           ],
         }),
       ),

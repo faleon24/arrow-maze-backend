@@ -48,7 +48,7 @@ function makeStubLevel(index: number): Level {
     board: new BoardLayout({
       rows: 2,
       cols: 2,
-      arrows: [new ArrowPathInfo('a1', 'PINK', ['0,0'], 'UP')],
+      arrows: [new ArrowPathInfo('a1', 'PINK', ['0,0'], 'NE')],
     }),
     parTimeMs: 30_000,
     published: true,

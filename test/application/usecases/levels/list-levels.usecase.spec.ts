@@ -35,8 +35,8 @@ function buildLevel(index: number): Level {
     rows: 2,
     cols: 2,
     arrows: [
-      new ArrowPathInfo(`a1-${index}`, 'PINK', ['0,0'], 'RIGHT'),
-      new ArrowPathInfo(`a2-${index}`, 'BLUE', ['1,1'], 'LEFT'),
+      new ArrowPathInfo(`a1-${index}`, 'PINK', ['0,0'], 'E'),
+      new ArrowPathInfo(`a2-${index}`, 'BLUE', ['1,1'], 'W'),
     ],
   });
   return new Level({

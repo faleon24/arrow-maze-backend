@@ -10,7 +10,7 @@ describe('Level', () => {
     new BoardLayout({
       rows: 3,
       cols: 3,
-      arrows: [new ArrowPathInfo('a1', 'PINK', ['0,0'], 'RIGHT')],
+      arrows: [new ArrowPathInfo('a1', 'PINK', ['0,0'], 'E')],
     });
   const buildParams = (over: Record<string, unknown> = {}) => ({
     id: 'lvl-1',

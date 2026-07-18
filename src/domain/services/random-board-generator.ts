@@ -1,6 +1,7 @@
 import { ArrowPathInfo } from '../models/arrow-path-info';
 import { BoardLayout } from '../models/board-layout';
 import { CollectibleInfo } from '../models/collectible-info';
+import { HEX_DIRECTIONS, hexStep, hexDirectionBetween } from '../models/hex';
 import { BoardSolver } from './board-solver';
 import { IRandomSource } from './random-source';
 
@@ -11,15 +12,8 @@ const COLORS: readonly string[] = [
   'YELLOW',
   'PURPLE',
 ];
-const DIRECTIONS: readonly string[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+const DIRECTIONS: readonly string[] = HEX_DIRECTIONS;
 const DIFFICULTIES: readonly string[] = ['EASY', 'MEDIUM', 'HARD'];
-
-const DIRECTION_DELTAS: Record<string, { dr: number; dc: number }> = {
-  UP: { dr: -1, dc: 0 },
-  DOWN: { dr: 1, dc: 0 },
-  LEFT: { dr: 0, dc: -1 },
-  RIGHT: { dr: 0, dc: 1 },
-};
 
 interface DifficultyParams {
   minRows: number;
@@ -37,16 +31,14 @@ interface DifficultyParams {
 }
 
 /**
- * RandomBoardGenerator v5 — same density as v4 (multi-cell snakes)
- * with reachable-only STAR placement.
+ * RandomBoardGenerator v5 (hex) — same density model as before
+ * (multi-cell snakes) with reachable-only STAR placement, ported to a
+ * hexagonal board using odd-r offset coordinates.
  *
- * v4 dropped STAR collectibles on any free cell, which sometimes
- * landed them where no arrow's ray ever passed — visually present,
- * mechanically unreachable. v5 first simulates the greedy solve to
- * compute the union of ray cells that fire during a valid clear, then
- * places STARs only on those cells. Reachable ⊂ free cells, so a
- * board with tightly-packed arrows may have fewer STARs than the
- * difficulty's target — acceptable, better than unreachable ones.
+ * Neighbours, growth and ray-tracing are now parity-aware: each step
+ * is recomputed with hexStep(direction, row, col) instead of adding a
+ * fixed {dr,dc} delta, because on a hex board the delta depends on the
+ * parity of the current row.
  */
 export class RandomBoardGenerator {
   private static readonly MAX_BOARD_ATTEMPTS = 200;
@@ -252,15 +244,12 @@ export class RandomBoardGenerator {
   ): string[] | null {
     const cells: string[] = [];
     const [hr, hc] = arrow.head.split(',').map((s) => parseInt(s, 10));
-    const delta = DIRECTION_DELTAS[arrow.direction];
-    let r = hr + delta.dr;
-    let c = hc + delta.dc;
+    let { row: r, col: c } = hexStep(arrow.direction, hr, hc);
     while (r >= 0 && r < rows && c >= 0 && c < cols) {
       const cell = `${r},${c}`;
       if (walls.has(cell) || otherCells.has(cell)) return null;
       cells.push(cell);
-      r += delta.dr;
-      c += delta.dc;
+      ({ row: r, col: c } = hexStep(arrow.direction, r, c));
     }
     return cells;
   }
@@ -319,36 +308,29 @@ export class RandomBoardGenerator {
   ): string[] {
     const path = [startCell];
     const pathSet = new Set(path);
-    let lastDelta: { dr: number; dc: number } | null = null;
+    let lastDir: string | null = null;
 
     while (path.length < targetLen) {
       const [r, c] = path[path.length - 1]
         .split(',')
         .map((s) => parseInt(s, 10));
-      const candidates: {
-        cell: string;
-        delta: { dr: number; dc: number };
-      }[] = [];
+      const candidates: { cell: string; dir: string }[] = [];
       for (const d of DIRECTIONS) {
-        const delta = DIRECTION_DELTAS[d];
-        const nr = r + delta.dr;
-        const nc = c + delta.dc;
+        const { row: nr, col: nc } = hexStep(d, r, c);
         if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
         const cell = `${nr},${nc}`;
         if (occupied.has(cell) || pathSet.has(cell)) continue;
-        candidates.push({ cell, delta });
+        candidates.push({ cell, dir: d });
       }
       if (candidates.length === 0) break;
 
       let pickPool = candidates;
       if (
-        lastDelta !== null &&
+        lastDir !== null &&
         candidates.length > 1 &&
         this.rng.nextInt(100) < Math.floor(turnBias * 100)
       ) {
-        const nonForward = candidates.filter(
-          (c) => c.delta.dr !== lastDelta!.dr || c.delta.dc !== lastDelta!.dc,
-        );
+        const nonForward = candidates.filter((c) => c.dir !== lastDir);
         if (nonForward.length > 0) {
           pickPool = nonForward;
         }
@@ -357,7 +339,7 @@ export class RandomBoardGenerator {
       const chosen = pickPool[this.rng.nextInt(pickPool.length)];
       path.push(chosen.cell);
       pathSet.add(chosen.cell);
-      lastDelta = chosen.delta;
+      lastDir = chosen.dir;
     }
     return path;
   }
@@ -372,12 +354,8 @@ export class RandomBoardGenerator {
     const [r2, c2] = path[path.length - 1]
       .split(',')
       .map((s) => parseInt(s, 10));
-    const dr = r2 - r1;
-    const dc = c2 - c1;
-    if (dr === -1) return 'UP';
-    if (dr === 1) return 'DOWN';
-    if (dc === -1) return 'LEFT';
-    if (dc === 1) return 'RIGHT';
+    const dir = hexDirectionBetween({ row: r1, col: c1 }, { row: r2, col: c2 });
+    if (dir !== null) return dir;
     return DIRECTIONS[this.rng.nextInt(DIRECTIONS.length)];
   }
 
@@ -397,14 +375,11 @@ export class RandomBoardGenerator {
     }
     const walls = new Set<string>(layout.walls);
     const [hr, hc] = arrow.head.split(',').map((s) => parseInt(s, 10));
-    const delta = DIRECTION_DELTAS[arrow.direction];
-    let r = hr + delta.dr;
-    let c = hc + delta.dc;
+    let { row: r, col: c } = hexStep(arrow.direction, hr, hc);
     while (r >= 0 && r < layout.rows && c >= 0 && c < layout.cols) {
       const cell = `${r},${c}`;
       if (walls.has(cell) || others.has(cell)) return false;
-      r += delta.dr;
-      c += delta.dc;
+      ({ row: r, col: c } = hexStep(arrow.direction, r, c));
     }
     return true;
   }

@@ -14,7 +14,7 @@ describe('BoardLayout (v2)', () => {
       const layout = new BoardLayout({
         rows: 3,
         cols: 3,
-        arrows: [arrow('a1', 'PINK', ['0,0'], 'RIGHT')],
+        arrows: [arrow('a1', 'PINK', ['0,0'], 'E')],
       });
       // Assert
       expect(layout.rows).toBe(3);
@@ -28,7 +28,7 @@ describe('BoardLayout (v2)', () => {
       const layout = new BoardLayout({
         rows: 5,
         cols: 5,
-        arrows: [arrow('a1', 'PINK', ['0,0', '0,1'], 'RIGHT')],
+        arrows: [arrow('a1', 'PINK', ['0,0', '0,1'], 'E')],
         walls: ['4,4'],
         collectibles: [new CollectibleInfo('2,2', 'STAR')],
       });
@@ -43,8 +43,8 @@ describe('BoardLayout (v2)', () => {
         rows: 5,
         cols: 5,
         arrows: [
-          arrow('L1', 'GREEN', ['4,0', '4,1', '3,1'], 'UP'),
-          arrow('U1', 'BLUE', ['0,0', '0,1', '0,2', '1,2', '2,2'], 'DOWN'),
+          arrow('L1', 'GREEN', ['4,0', '4,1', '3,1'], 'NE'),
+          arrow('U1', 'BLUE', ['0,0', '0,1', '0,2', '1,2', '2,2'], 'SE'),
         ],
       });
       // Assert
@@ -60,7 +60,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 0,
             cols: 3,
-            arrows: [arrow('a1', 'PINK', ['0,0'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['0,0'], 'NE')],
           }),
       ).toThrow(/rows/);
     });
@@ -70,7 +70,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 3,
             cols: -1,
-            arrows: [arrow('a1', 'PINK', ['0,0'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['0,0'], 'NE')],
           }),
       ).toThrow(/cols/);
     });
@@ -88,8 +88,8 @@ describe('BoardLayout (v2)', () => {
             rows: 3,
             cols: 3,
             arrows: [
-              arrow('a1', 'PINK', ['0,0'], 'UP'),
-              arrow('a1', 'BLUE', ['1,1'], 'UP'),
+              arrow('a1', 'PINK', ['0,0'], 'NE'),
+              arrow('a1', 'BLUE', ['1,1'], 'NE'),
             ],
           }),
       ).toThrow(/duplicate arrow id/);
@@ -100,7 +100,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 3,
             cols: 3,
-            arrows: [arrow('a1', 'PINK', ['3,0'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['3,0'], 'NE')],
           }),
       ).toThrow(/outside a 3x3 grid/);
     });
@@ -111,8 +111,8 @@ describe('BoardLayout (v2)', () => {
             rows: 3,
             cols: 3,
             arrows: [
-              arrow('a1', 'PINK', ['0,0', '0,1'], 'RIGHT'),
-              arrow('a2', 'BLUE', ['0,1', '0,2'], 'RIGHT'),
+              arrow('a1', 'PINK', ['0,0', '0,1'], 'E'),
+              arrow('a2', 'BLUE', ['0,1', '0,2'], 'E'),
             ],
           }),
       ).toThrow(/overlap at "0,1"/);
@@ -125,8 +125,8 @@ describe('BoardLayout (v2)', () => {
             rows: 4,
             cols: 4,
             arrows: [
-              arrow('a1', 'PINK', ['0,0', '0,1', '1,1'], 'DOWN'),
-              arrow('a2', 'BLUE', ['1,1', '2,1'], 'DOWN'),
+              arrow('a1', 'PINK', ['0,0', '0,1', '1,1'], 'SE'),
+              arrow('a2', 'BLUE', ['1,1', '2,1'], 'SW'),
             ],
           }),
       ).toThrow(/overlap/);
@@ -138,7 +138,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 3,
             cols: 3,
-            arrows: [arrow('a1', 'PINK', ['0,0'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['0,0'], 'NE')],
             walls: ['1,-1'],
           }),
       ).toThrow(/wall position must match/);
@@ -149,7 +149,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 3,
             cols: 3,
-            arrows: [arrow('a1', 'PINK', ['0,0'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['0,0'], 'NE')],
             walls: ['3,3'],
           }),
       ).toThrow(/outside a 3x3 grid/);
@@ -160,7 +160,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 3,
             cols: 3,
-            arrows: [arrow('a1', 'PINK', ['0,0'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['0,0'], 'NE')],
             walls: ['1,1', '1,1'],
           }),
       ).toThrow(/duplicate wall/);
@@ -171,7 +171,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 3,
             cols: 3,
-            arrows: [arrow('a1', 'PINK', ['1,1'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['1,1'], 'NE')],
             walls: ['1,1'],
           }),
       ).toThrow(/overlap at "1,1".*wall/);
@@ -184,7 +184,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 3,
             cols: 3,
-            arrows: [arrow('a1', 'PINK', ['0,0'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['0,0'], 'NE')],
             collectibles: [
               new CollectibleInfo('2,2', 'STAR'),
               new CollectibleInfo('2,2', 'STAR'),
@@ -198,7 +198,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 3,
             cols: 3,
-            arrows: [arrow('a1', 'PINK', ['1,1'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['1,1'], 'NE')],
             collectibles: [new CollectibleInfo('1,1', 'STAR')],
           }),
       ).toThrow(/overlap at "1,1".*collectible/);
@@ -209,7 +209,7 @@ describe('BoardLayout (v2)', () => {
           new BoardLayout({
             rows: 3,
             cols: 3,
-            arrows: [arrow('a1', 'PINK', ['0,0'], 'UP')],
+            arrows: [arrow('a1', 'PINK', ['0,0'], 'NE')],
             walls: ['2,2'],
             collectibles: [new CollectibleInfo('2,2', 'STAR')],
           }),
@@ -222,7 +222,7 @@ describe('BoardLayout (v2)', () => {
       const layout = new BoardLayout({
         rows: 3,
         cols: 3,
-        arrows: [arrow('a1', 'PINK', ['0,0', '0,1'], 'RIGHT')],
+        arrows: [arrow('a1', 'PINK', ['0,0', '0,1'], 'E')],
         walls: ['2,2'],
         collectibles: [new CollectibleInfo('1,2', 'STAR')],
       });
@@ -238,7 +238,7 @@ describe('BoardLayout (v2)', () => {
             id: 'a1',
             color: 'PINK',
             cells: ['0,0', '0,1'],
-            direction: 'RIGHT',
+            direction: 'E',
           },
         ],
         walls: ['2,2'],
