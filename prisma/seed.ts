@@ -326,6 +326,36 @@ const figures: FigureSpec[] = [
       '...#...',
     ],
   },
+  {
+    name: 'Heart',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-00000000000f',
+    pattern: ['.##.##.', '#######', '#######', '#######', '.#####.', '..###..', '...#...'],
+  },
+  {
+    name: 'Crown',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-000000000010',
+    pattern: ['#..#..#', '#.###.#', '#######', '#######', '#######', '.#####.'],
+  },
+  {
+    name: 'Up Arrow',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-000000000011',
+    pattern: ['...#...', '..###..', '.#####.', '#######', '..###..', '..###..', '..###..'],
+  },
+  {
+    name: 'Gem',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-000000000012',
+    pattern: ['...#...', '..###..', '.#####.', '#######', '.#####.', '..###..', '...#...'],
+  },
+  {
+    name: 'Ghost',
+    difficulty: 'HARD',
+    uuid: 'f16a0000-0000-4000-8000-000000000013',
+    pattern: ['.#####.', '#######', '#.#.#.#', '#######', '#######', '#.#.#.#', '#.#.#.#'],
+  },
 ];
 
 // ===========================================================================
@@ -659,9 +689,12 @@ async function main(): Promise<void> {
   // Dense 0-based indices assigned in this order so the app shows a clean
   // easy -> medium -> hard progression with the figures up front.
   const order: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
-  // Showcase leads: indices 0..4, reachable without unlocking anything.
-  const ordered: SeedItem[] = [...showcaseItems];
+  // Strict easy -> medium -> hard progression; showcase levels sit inside
+  // their own difficulty tier so the hardest (Leviathan/Heartbreaker) land
+  // at the very end of the catalog.
+  const ordered: SeedItem[] = [];
   for (const diff of order) {
+    ordered.push(...showcaseItems.filter((it) => it.difficulty === diff));
     ordered.push(...figureItems.filter((it) => it.difficulty === diff));
     ordered.push(...generatedItems.filter((it) => it.difficulty === diff));
   }
